@@ -5,6 +5,7 @@ Native window (PyWebView + FastHTML). Run: python3 conv-browser.py
 """
 
 import json
+import re
 import socket
 import sqlite3
 import sys
@@ -46,6 +47,38 @@ def _clean_assistant_title(text: str) -> str:
         if len(line) > 8:
             return line[:120]
     return text[:120].replace("\n", " ")
+
+def build_fts_query(q: str) -> str:
+    """Convert a plain-text search query into an FTS5 MATCH expression.
+
+    Rules:
+    - Quoted phrases (e.g. "exact phrase") are passed through unchanged.
+    - Bare words are AND-ed together.
+    - The last bare token gets a trailing * for prefix matching (good for
+      incremental / live search as the user types).
+    - FTS5 special characters are stripped from bare tokens to avoid
+      OperationalError on partial input.
+    """
+    parts: list[str] = []
+    for m in re.finditer(r'"[^"]*"|\S+', q):
+        tok = m.group()
+        if tok.startswith('"'):
+            parts.append(tok)
+        else:
+            safe = re.sub(r'[^\w\-]', '', tok, flags=re.UNICODE)
+            if safe:
+                parts.append(safe)
+
+    if not parts:
+        return ''
+
+    result = []
+    for i, p in enumerate(parts):
+        if i == len(parts) - 1 and not p.startswith('"'):
+            result.append(p + '*')
+        else:
+            result.append(p)
+    return ' AND '.join(result)
 
 # ---------------------------------------------------------------------------
 # Fonts & CSS
@@ -1493,21 +1526,24 @@ def search_route(q: str = ""):
             id="main",
         )
 
-    db     = get_db()
-    safe_q = '"' + q.replace('"', '""') + '"'
-    try:
-        rows = db.execute("""
-            SELECT m.session_id, m.seq, m.role,
-                   s.first_user_text, s.ended_at, s.cwd,
-                   snippet(msg_fts, 0, '<mark>', '</mark>', '…', 18) AS hit
-            FROM msg_fts
-            JOIN messages m ON m.id  = msg_fts.rowid
-            JOIN sessions s ON s.session_id = m.session_id
-            WHERE msg_fts MATCH ?
-            ORDER BY s.ended_at DESC LIMIT 60
-        """, [safe_q]).fetchall()
-    except sqlite3.OperationalError:
-        rows = []
+    db    = get_db()
+    fts_q = build_fts_query(q)
+    rows  = []
+    if fts_q:
+        try:
+            rows = db.execute("""
+                SELECT m.session_id, m.seq, m.role,
+                       s.first_user_text, s.ended_at, s.cwd,
+                       snippet(msg_fts, 0, '<mark>', '</mark>', '…', 20) AS hit,
+                       msg_fts.rank AS bm25
+                FROM msg_fts
+                JOIN messages m ON m.id  = msg_fts.rowid
+                JOIN sessions s ON s.session_id = m.session_id
+                WHERE msg_fts MATCH ?
+                ORDER BY msg_fts.rank, s.ended_at DESC LIMIT 60
+            """, [fts_q]).fetchall()
+        except sqlite3.OperationalError:
+            rows = []
 
     if not rows:
         return Div(
@@ -1637,14 +1673,16 @@ def search_plans(q: str = ""):
     if not PLANS_DIR.exists():
         return Div(Div(P("No plans directory."), cls="welcome"), id="main")
 
+    # Split query into words; all must be present (AND semantics)
+    words = [w for w in q.lower().split() if w]
     results = []
     for p in sorted(PLANS_DIR.glob("*.md"), key=lambda x: x.stat().st_mtime, reverse=True):
         try:
             text = p.read_text()
         except OSError:
             continue
-        ql = q.lower()
-        if ql not in text.lower():
+        tl = text.lower()
+        if not all(w in tl for w in words):
             continue
         # Extract title
         title = p.stem
@@ -1652,18 +1690,18 @@ def search_plans(q: str = ""):
             if line.startswith("# "):
                 title = line[2:].strip()
                 break
-        # Find a snippet around the first match
-        idx = text.lower().find(ql)
+        # Find a snippet around the first word match
+        first_word = words[0]
+        idx   = tl.find(first_word)
         start = max(0, idx - 60)
-        end   = min(len(text), idx + len(q) + 60)
-        snippet = text[start:end].replace("\n", " ").strip()
-        hi_start = idx - start
-        hi_end   = hi_start + len(q)
-        snippet_html = (
-            snippet[:hi_start]
-            + f"<mark>{snippet[hi_start:hi_end]}</mark>"
-            + snippet[hi_end:]
-        )
+        end   = min(len(text), idx + len(first_word) + 120)
+        raw   = text[start:end].replace("\n", " ").strip()
+        # Highlight all matched words in the snippet
+        def _highlight(s: str, ws: list[str]) -> str:
+            for w in ws:
+                s = re.sub(f'(?i)({re.escape(w)})', r'<mark>\1</mark>', s)
+            return s
+        snippet_html = _highlight(raw, words)
         age = fmt_rel(datetime.fromtimestamp(p.stat().st_mtime).astimezone(timezone.utc).isoformat().replace("+00:00","Z"))
         results.append(Div(
             P(title, cls="sr-title"),
