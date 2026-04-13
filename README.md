@@ -2,7 +2,7 @@
 
 A native desktop app for browsing Claude Code conversation history. Reads the JSONL session files that Claude Code writes to `~/.claude/projects/`, indexes them into SQLite FTS5, and presents them in a searchable, navigable UI.
 
-Built with **PyWebView** (native GTK window) + **FastHTML** (Python web framework). Linux only — PyWebView uses GTK/WebKit on Linux.
+Built with **PyWebView** + **FastHTML** (Python web framework). Runs on Linux (GTK/WebKit) and Windows (Edge WebView2).
 
 ## What it does
 
@@ -10,8 +10,8 @@ Built with **PyWebView** (native GTK window) + **FastHTML** (Python web framewor
   - **Timeline** — conversations grouped by last activity: Today, Yesterday, This week, This month, Older
   - **Projects** — collapsed project folders (`/home/giedrius`, `/home/giedrius/homelab`, etc.), expand to see sessions inside
   - **Plans** — browses `~/.claude/plans/*.md` plan files written by Claude during planning mode
-- **Context-aware search** — searches conversations when in Timeline/Projects, searches plan content when in Plans
-- **Full conversation view** — renders the back-and-forth with role labels, timestamps, copy buttons per message, copy-all button
+- **Context-aware search** — searches conversations when in Timeline/Projects, searches plan content when in Plans. Clicking a search result scrolls to the matched message and highlights search terms inline
+- **Full conversation view** — renders the back-and-forth with role labels, timestamps, copy buttons per message, copy-all button, back button to return to previous view
 - **Resumed sessions** — detects sessions with >2h gaps (Claude `/resume` appends to the same file), shows a gap indicator inline
 - **Automated session filtering** — n8n monitoring calls and aborted sessions hidden by default, expandable via a chip at the bottom of the sidebar
 - **Plans rendered as markdown** — via `marked.js` + `highlight.js` loaded from CDN
@@ -21,7 +21,8 @@ Built with **PyWebView** (native GTK window) + **FastHTML** (Python web framewor
 | Path | Purpose |
 |------|---------|
 | `~/conv-browser.py` | The entire app — single file |
-| `~/.cache/conv-browser/index.sqlite` | SQLite FTS5 index (auto-created) |
+| `~/.cache/conv-browser/index.sqlite` (Linux) | SQLite FTS5 index (auto-created) |
+| `%LOCALAPPDATA%/conv-browser/index.sqlite` (Windows) | SQLite FTS5 index (auto-created) |
 | `~/.claude/projects/` | Claude Code session source data (read-only) |
 | `~/.claude/plans/` | Claude plan markdown files (read-only) |
 | `~/bin/conv-browser` | Shell launcher script |
@@ -29,19 +30,25 @@ Built with **PyWebView** (native GTK window) + **FastHTML** (Python web framewor
 
 ## Install
 
+**Linux:**
 ```bash
 pip install python-fasthtml 'pywebview[gtk]' --break-system-packages
 # If GTK WebKit is missing:
 sudo apt install gir1.2-webkit2-4.1 python3-gi python3-gi-cairo
 ```
 
+**Windows:**
+```bash
+pip install python-fasthtml pywebview
+```
+
 ## Launch
 
 ```bash
-conv-browser          # via ~/bin/conv-browser on PATH
+conv-browser          # via ~/bin/conv-browser on PATH (Linux)
 # or
-python3 ~/conv-browser.py
-# or search "Conv Browser" in GNOME app grid
+python3 conv-browser.py
+# or search "Conv Browser" in GNOME app grid (Linux)
 ```
 
 ## Architecture
@@ -118,7 +125,7 @@ meta     (key, value)   -- stores last_scan_at
 
 ```
 python-fasthtml   FastHTML/HTMX web framework
-pywebview[gtk]    Native window (GTK/WebKit on Linux)
+pywebview         Native window (GTK/WebKit on Linux, Edge WebView2 on Windows)
 uvicorn           ASGI server (already installed with fasthtml)
 sqlite3           stdlib — FTS5 virtual tables
 ```

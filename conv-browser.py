@@ -470,6 +470,25 @@ body {
   transition: all 0.12s;
 }
 .copy-all-btn:hover { color: var(--text); border-color: var(--text-dim); }
+.back-btn {
+  padding: 4px 10px;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text-dim);
+  cursor: pointer;
+  font-family: var(--display);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  transition: all 0.12s;
+  margin-bottom: 10px;
+}
+.back-btn:hover { color: var(--text); border-color: var(--border-hi); }
+.msg-target { background: var(--accent-lo); border-radius: var(--radius); padding: 8px; }
+.msg-target .msg-body mark,
+.sr-snip mark { background: var(--mark-bg); color: var(--mark-text); padding: 1px 2px; border-radius: 2px; }
 
 /* ── messages ────────────────────────────────────────────── */
 .msg {
@@ -818,6 +837,41 @@ function copyPlanRaw(btn) {
     btn.textContent = 'copied!';
     setTimeout(() => btn.textContent = 'copy raw', 1600);
   });
+}
+
+function goBack() {
+  var input = document.getElementById('search-input');
+  var q = input ? input.value.trim() : '';
+  document.querySelectorAll('.s-item').forEach(function(el) { el.classList.remove('active'); });
+  if (q.length >= 2) {
+    var url = input.getAttribute('hx-get') || '/search';
+    htmx.ajax('GET', url + '?q=' + encodeURIComponent(q), {target: '#main', swap: 'outerHTML'});
+  } else {
+    document.getElementById('main').innerHTML =
+      '<div class="welcome"><div class="welcome-icon">\u25C8</div>' +
+      '<p class="welcome-text">Select a conversation</p>' +
+      '<p class="welcome-sub">or search above to find something</p></div>';
+  }
+}
+
+function scrollToSearchResult(seq) {
+  var el = document.getElementById('msg-' + seq);
+  if (!el) return;
+  el.classList.add('msg-target');
+  setTimeout(function() { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); }, 50);
+  var input = document.getElementById('search-input');
+  var query = input ? input.value.trim() : '';
+  if (!query) return;
+  var body = el.querySelector('.msg-body');
+  if (!body) return;
+  var words = query.split(/\s+/).filter(function(w) { return w.length > 0; });
+  var text = body.textContent;
+  text = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  words.forEach(function(w) {
+    w = w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    text = text.replace(new RegExp('(' + w + ')', 'gi'), '<mark>$1</mark>');
+  });
+  body.innerHTML = text;
 }
 
 // Enable Ctrl+C to copy selected text (PyWebView blocks default shortcuts)
@@ -1455,7 +1509,7 @@ def drawer_route(by: str = "timeline", auto: str = "0"):
     return drawer_timeline(show_automated=show)
 
 @rt("/session/{sid}")
-def session_view(sid: str):
+def session_view(sid: str, seq: int = -1):
     db   = get_db()
     s    = db.execute("SELECT * FROM sessions WHERE session_id=?", [sid]).fetchone()
     if not s:
@@ -1479,6 +1533,7 @@ def session_view(sid: str):
         chips.append(Span(f"resumed · last {fmt_rel(s['ended_at'])}", cls="sess-meta-chip accent"))
 
     sess_hd = Div(
+        Button("\u2190 back", cls="back-btn", onclick="goBack()"),
         H2(s["first_user_text"] or "Conversation", cls="sess-hd-title"),
         Div(*chips, cls="sess-hd-meta"),
         Button("copy all", cls="copy-all-btn", onclick="copyAll(this)"),
@@ -1526,8 +1581,12 @@ def session_view(sid: str):
         ))
         prev_ts = m["ts"]
 
+    scroll_script = []
+    if seq >= 0:
+        scroll_script = [Script(f"scrollToSearchResult({seq});")]
+
     return Div(
-        Div(sess_hd, *msg_els, id="main-inner"),
+        Div(sess_hd, *msg_els, *scroll_script, id="main-inner"),
         id="main",
     )
 
@@ -1589,10 +1648,10 @@ def search_route(q: str = ""):
                 cls="sr-meta",
             ),
             cls="sr",
-            hx_get=f"/session/{sid}",
+            hx_get=f"/session/{sid}?seq={seq}",
             hx_target="#main",
             hx_push_url=f"/session/{sid}",
-            onclick=f"activateSession('{sid}'); setTimeout(()=>{{window.location.hash='msg-{seq}';}}, 50)",
+            onclick=f"activateSession('{sid}')",
         ))
 
     return Div(*result_els, id="main")
