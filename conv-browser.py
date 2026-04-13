@@ -1851,6 +1851,7 @@ if __name__ == "__main__":
         f"http://127.0.0.1:{port}/",
         width=1300, height=860,
         min_size=(800, 600),
+        text_select=True,
     )
     window.events.closed += lambda: sys.exit(0)
     webview.start()
