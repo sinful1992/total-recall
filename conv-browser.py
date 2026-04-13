@@ -820,6 +820,16 @@ function copyPlanRaw(btn) {
   });
 }
 
+// Enable Ctrl+C to copy selected text (PyWebView blocks default shortcuts)
+document.addEventListener('keydown', function(e) {
+  if ((e.ctrlKey || e.metaKey) && e.key === 'c') {
+    const sel = window.getSelection();
+    if (sel && sel.toString().length > 0) {
+      navigator.clipboard.writeText(sel.toString());
+    }
+  }
+});
+
 document.addEventListener('htmx:afterSwap', function(e) {
   if (e.target.id === 'main') {
     renderPlanMarkdown();
