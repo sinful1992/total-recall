@@ -5,6 +5,8 @@ Native window (PyWebView + FastHTML). Run: python3 conv-browser.py
 """
 
 import json
+import os
+import platform
 import re
 import socket
 import sqlite3
@@ -23,8 +25,13 @@ from fasthtml.common import *
 # ---------------------------------------------------------------------------
 PROJECTS_DIR = Path("~/.claude/projects/").expanduser()
 PLANS_DIR    = Path("~/.claude/plans/").expanduser()
-CACHE_DIR    = Path("~/.cache/conv-browser/").expanduser()
-DB_PATH      = CACHE_DIR / "index.sqlite"
+
+if platform.system() == "Windows":
+    CACHE_DIR = Path(os.environ.get("LOCALAPPDATA", "~")) / "conv-browser"
+else:
+    CACHE_DIR = Path("~/.cache/conv-browser/").expanduser()
+
+DB_PATH = CACHE_DIR / "index.sqlite"
 
 # Prefixes that indicate a system-injected first message, not a real user prompt
 SYSTEM_PREFIXES = (
@@ -1091,6 +1098,8 @@ def build_or_refresh_index():
             for r in conn.execute("SELECT path, mtime, size, session_id FROM files").fetchall()
         }
 
+        # NOTE: we intentionally never delete sessions/messages whose source
+        # JSONL files have been removed.  The DB serves as a permanent archive.
         for path in sorted(PROJECTS_DIR.rglob("*.jsonl")):
             if "subagents" in path.parts:
                 continue
@@ -1589,7 +1598,7 @@ def plans_sidebar():
     for p in plans:
         title, size_lines = "Untitled", 0
         try:
-            lines = p.read_text().splitlines()
+            lines = p.read_text(encoding="utf-8", errors="replace").splitlines()
             size_lines = len(lines)
             for line in lines:
                 if line.startswith("# "):
@@ -1627,7 +1636,7 @@ def plan_view(slug: str):
     if not path.exists():
         return Div(P("Plan not found."), id="main")
 
-    raw = path.read_text()
+    raw = path.read_text(encoding="utf-8", errors="replace")
     mtime = path.stat().st_mtime
     dt    = datetime.fromtimestamp(mtime).astimezone()
 
@@ -1678,7 +1687,7 @@ def search_plans(q: str = ""):
     results = []
     for p in sorted(PLANS_DIR.glob("*.md"), key=lambda x: x.stat().st_mtime, reverse=True):
         try:
-            text = p.read_text()
+            text = p.read_text(encoding="utf-8", errors="replace")
         except OSError:
             continue
         tl = text.lower()
