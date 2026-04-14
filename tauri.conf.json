@@ -5,16 +5,7 @@
   "app": {
     "security": {
       "csp": null
-    },
-    "windows": [
-      {
-        "title": "Conv Browser",
-        "width": 1300,
-        "height": 860,
-        "minWidth": 800,
-        "minHeight": 600
-      }
-    ]
+    }
   },
   "bundle": {
     "active": true,
