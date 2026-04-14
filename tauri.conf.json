@@ -10,6 +10,12 @@
   "bundle": {
     "active": true,
     "targets": "all",
-    "icon": []
+    "icon": [
+      "icons/icon_32x32.png",
+      "icons/icon_128x128.png",
+      "icons/icon_256x256.png",
+      "icons/icon_512x512.png",
+      "icons/icon.ico"
+    ]
   }
 }
