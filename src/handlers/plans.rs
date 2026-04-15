@@ -3,13 +3,12 @@ use maud::{html, Markup, PreEscaped};
 
 use crate::AppState;
 
-fn plans_dir() -> std::path::PathBuf {
-    let home = std::env::var("HOME").unwrap_or_default();
-    std::path::PathBuf::from(home).join(".claude").join("plans")
+fn plans_dir(home: &std::path::Path) -> std::path::PathBuf {
+    home.join(".claude").join("plans")
 }
 
-pub async fn sidebar_handler(_state: State<AppState>) -> Markup {
-    let dir = plans_dir();
+pub async fn sidebar_handler(State(state): State<AppState>) -> Markup {
+    let dir = plans_dir(&state.home_dir);
     if !dir.exists() {
         return html! {
             div id="sidebar" {
@@ -75,9 +74,10 @@ pub async fn sidebar_handler(_state: State<AppState>) -> Markup {
     .unwrap()
 }
 
-pub async fn plan_handler(_state: State<AppState>, Path(slug): Path<String>) -> Markup {
+pub async fn plan_handler(State(state): State<AppState>, Path(slug): Path<String>) -> Markup {
+    let home = state.home_dir.clone();
     tokio::task::spawn_blocking(move || {
-        let path = plans_dir().join(format!("{}.md", slug));
+        let path = plans_dir(&home).join(format!("{}.md", slug));
         if !path.exists() {
             return html! {
                 div id="main" { p { "Plan not found." } }

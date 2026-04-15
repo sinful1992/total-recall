@@ -7,8 +7,8 @@ use std::path::PathBuf;
 use crate::AppState;
 use crate::handlers::{drawer, index, plans, refresh, search, session};
 
-pub fn make_router(db_path: PathBuf) -> Router {
-    let state = AppState { db_path };
+pub fn make_router(db_path: PathBuf, home_dir: PathBuf) -> Router {
+    let state = AppState { db_path, home_dir };
     Router::new()
         .route("/", get(index::handler))
         .route("/drawer", get(drawer::handler))

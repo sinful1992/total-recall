@@ -25,6 +25,7 @@ pub async fn handler(
     }
 
     let db_path = state.db_path.clone();
+    let home = state.home_dir.to_string_lossy().into_owned();
     tokio::task::spawn_blocking(move || {
         let conn = crate::db::open(&db_path).unwrap();
         let fts_q = build_fts_query(&q);
@@ -81,7 +82,7 @@ pub async fn handler(
                         p.sr-snip { (PreEscaped(hit)) }
                         div.sr-meta {
                             span { (fmt_rel(ended_at)) }
-                            span { (cwd_label(cwd)) }
+                            span { (cwd_label(cwd, &home)) }
                             span { (role) }
                         }
                     }
@@ -94,7 +95,7 @@ pub async fn handler(
 }
 
 pub async fn plans_handler(
-    State(_state): State<AppState>,
+    State(state): State<AppState>,
     Query(params): Query<SearchParams>,
 ) -> Markup {
     let q = params.q.trim().to_string();
@@ -109,7 +110,7 @@ pub async fn plans_handler(
         };
     }
 
-    let plans_dir = dirs_plans();
+    let plans_dir = dirs_plans(&state.home_dir);
     if !plans_dir.exists() {
         return html! {
             div id="main" {
@@ -196,9 +197,8 @@ pub async fn plans_handler(
     .unwrap()
 }
 
-fn dirs_plans() -> std::path::PathBuf {
-    let home = std::env::var("HOME").unwrap_or_default();
-    std::path::PathBuf::from(home).join(".claude").join("plans")
+fn dirs_plans(home: &std::path::Path) -> std::path::PathBuf {
+    home.join(".claude").join("plans")
 }
 
 fn fmt_rel_from_path(path: &std::path::Path) -> String {

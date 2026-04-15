@@ -6,9 +6,9 @@ use walkdir::WalkDir;
 
 use crate::parser::{self, Message, SessionMeta};
 
-pub fn build_or_refresh_index(db_path: &Path) {
+pub fn build_or_refresh_index(db_path: &Path, home_dir: &Path) {
     println!("Indexing conversations...");
-    let projects_dir = dirs_home().join(".claude").join("projects");
+    let projects_dir = home_dir.join(".claude").join("projects");
     if !projects_dir.exists() { return; }
 
     let mut conn = match Connection::open(db_path) {
@@ -249,8 +249,3 @@ fn index_incremental(
     tx.commit()
 }
 
-fn dirs_home() -> PathBuf {
-    std::env::var("HOME")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| PathBuf::from("/tmp"))
-}

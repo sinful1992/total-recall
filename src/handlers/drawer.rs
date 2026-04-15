@@ -22,6 +22,7 @@ pub async fn handler(
     let by = params.by.clone();
     let show_automated = params.auto == "1";
     let db_path = state.db_path.clone();
+    let home = state.home_dir.to_string_lossy().into_owned();
 
     tokio::task::spawn_blocking(move || {
         let conn = crate::db::open(&db_path).unwrap();
@@ -35,7 +36,7 @@ pub async fn handler(
             .collect();
 
         if by == "projects" {
-            drawer_projects_html(&sessions)
+            drawer_projects_html(&sessions, &home)
         } else {
             let auto_count: i64 = conn
                 .query_row("SELECT COUNT(*) FROM sessions WHERE is_automated=1", [], |r| r.get(0))

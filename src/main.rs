@@ -9,23 +9,34 @@ mod parser;
 mod routes;
 
 use std::net::TcpListener;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 #[derive(Clone)]
 pub struct AppState {
     pub db_path: PathBuf,
+    pub home_dir: PathBuf,
 }
 
-fn cache_dir() -> PathBuf {
+fn resolve_home() -> PathBuf {
+    if let Ok(h) = std::env::var("HOME") {
+        if !h.is_empty() { return PathBuf::from(h); }
+    }
+    if let Ok(p) = std::env::var("USERPROFILE") {
+        if !p.is_empty() { return PathBuf::from(p); }
+    }
+    panic!("Cannot resolve user home: neither HOME nor USERPROFILE is set");
+}
+
+fn cache_dir(home: &Path) -> PathBuf {
     #[cfg(target_os = "windows")]
     {
+        let _ = home;
         let local = std::env::var("LOCALAPPDATA").unwrap_or_else(|_| ".".to_string());
         PathBuf::from(local).join("conv-browser")
     }
     #[cfg(not(target_os = "windows"))]
     {
-        let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
-        PathBuf::from(home).join(".cache").join("conv-browser")
+        home.join(".cache").join("conv-browser")
     }
 }
 
@@ -49,18 +60,20 @@ fn wait_ready(port: u16) {
 }
 
 fn main() {
-    let db_path = cache_dir().join("index.sqlite");
+    let home_dir = resolve_home();
+    let db_path = cache_dir(&home_dir).join("index.sqlite");
 
     db::init_db(&db_path).expect("Failed to initialize database");
-    indexer::build_or_refresh_index(&db_path);
+    indexer::build_or_refresh_index(&db_path, &home_dir);
 
     let port = pick_free_port();
     let db_path_clone = db_path.clone();
+    let home_clone = home_dir.clone();
 
     std::thread::spawn(move || {
         let rt = tokio::runtime::Runtime::new().unwrap();
         rt.block_on(async {
-            let app = routes::make_router(db_path_clone);
+            let app = routes::make_router(db_path_clone, home_clone);
             let listener = tokio::net::TcpListener::bind(format!("127.0.0.1:{}", port))
                 .await
                 .unwrap();

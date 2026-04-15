@@ -127,7 +127,7 @@ pub fn drawer_timeline_html(sessions: &[SessionRow], auto_count: i64, show_autom
     }
 }
 
-pub fn drawer_projects_html(sessions: &[SessionRow]) -> Markup {
+pub fn drawer_projects_html(sessions: &[SessionRow], home: &str) -> Markup {
     // Group by cwd/project_dir
     let mut projects: indexmap::IndexMap<String, Vec<&SessionRow>> = Default::default();
     for s in sessions {
@@ -145,7 +145,7 @@ pub fn drawer_projects_html(sessions: &[SessionRow]) -> Markup {
     html! {
         div id="sidebar" {
             @for (i, (proj, items)) in sorted.iter().enumerate() {
-                (proj_group(&format!("proj_{}", i), &cwd_label(proj), items))
+                (proj_group(&format!("proj_{}", i), &cwd_label(proj, home), items))
             }
         }
     }
@@ -215,12 +215,13 @@ pub fn session_view_html(
     msg_count: i64,
     is_resumed: i64,
     cwd: &str,
+    home: &str,
     messages: &[MsgRow],
     scroll_to_seq: Option<i64>,
 ) -> Markup {
     let title = if first_user_text.is_empty() { "Conversation" } else { first_user_text };
     let started = fmt_date(started_at);
-    let cwd_label = cwd_label(cwd);
+    let cwd_label = cwd_label(cwd, home);
 
     let scroll_script = scroll_to_seq.map(|seq| {
         html! { script { (PreEscaped(format!("scrollToSearchResult({});", seq))) } }

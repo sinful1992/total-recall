@@ -16,6 +16,7 @@ pub async fn handler(
     Query(params): Query<SessionParams>,
 ) -> Markup {
     let db_path = state.db_path.clone();
+    let home = state.home_dir.to_string_lossy().into_owned();
     let scroll_seq = params.seq;
 
     tokio::task::spawn_blocking(move || {
@@ -60,6 +61,7 @@ pub async fn handler(
                     msg_count,
                     is_resumed,
                     &cwd,
+                    &home,
                     &messages,
                     scroll_seq,
                 )

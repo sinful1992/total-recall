@@ -73,10 +73,9 @@ pub fn gap_label(ts1: &str, ts2: &str) -> String {
     }
 }
 
-pub fn cwd_label(cwd: &str) -> String {
+pub fn cwd_label(cwd: &str, home: &str) -> String {
     if cwd.is_empty() { return "—".to_string(); }
-    let home = std::env::var("HOME").unwrap_or_default();
-    let s = if cwd.starts_with(&home) {
+    let s = if !home.is_empty() && cwd.starts_with(home) {
         format!("~{}", &cwd[home.len()..])
     } else {
         cwd.to_string()
