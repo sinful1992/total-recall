@@ -116,7 +116,7 @@ body {
 #refresh-btn:hover { color: var(--accent); border-color: var(--border-hi); }
 
 #left-panel {
-  width: 280px;
+  width: var(--left-w, 280px);
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
@@ -124,6 +124,18 @@ body {
   border-right: 1px solid var(--border);
   overflow: hidden;
 }
+
+#resize-handle {
+  flex-shrink: 0;
+  width: 4px;
+  cursor: col-resize;
+  background: transparent;
+  transition: background 0.12s;
+  z-index: 5;
+}
+#resize-handle:hover, #resize-handle.dragging { background: var(--accent); }
+body.resizing { cursor: col-resize !important; user-select: none; }
+body.resizing * { user-select: none !important; }
 
 #sidenav {
   display: flex;
@@ -638,6 +650,42 @@ body {
 "#;
 
 pub const JS: &str = r#"
+(function initResize() {
+  const KEY = 'conv-browser:left-w';
+  const MIN = 180, MAX = 600;
+  const root = document.documentElement;
+  const saved = parseInt(localStorage.getItem(KEY) || '', 10);
+  if (!isNaN(saved) && saved >= MIN && saved <= MAX) {
+    root.style.setProperty('--left-w', saved + 'px');
+  }
+  document.addEventListener('mousedown', (e) => {
+    const handle = e.target.closest('#resize-handle');
+    if (!handle) return;
+    e.preventDefault();
+    const startX = e.clientX;
+    const panel = document.getElementById('left-panel');
+    const startW = panel.getBoundingClientRect().width;
+    handle.classList.add('dragging');
+    document.body.classList.add('resizing');
+    const onMove = (ev) => {
+      let w = startW + (ev.clientX - startX);
+      if (w < MIN) w = MIN;
+      if (w > MAX) w = MAX;
+      root.style.setProperty('--left-w', w + 'px');
+    };
+    const onUp = () => {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      handle.classList.remove('dragging');
+      document.body.classList.remove('resizing');
+      const w = parseInt(root.style.getPropertyValue('--left-w'), 10);
+      if (!isNaN(w)) localStorage.setItem(KEY, String(w));
+    };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  });
+})();
+
 function copyMsg(btn, text) {
   navigator.clipboard.writeText(text).then(() => {
     btn.classList.add('ok');

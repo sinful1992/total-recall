@@ -69,6 +69,7 @@ pub fn full_page(sidebar_content: Markup) -> Markup {
                         }
                         (sidebar_content)
                     }
+                    div id="resize-handle" {}
                     div id="main" {
                         (welcome())
                     }
