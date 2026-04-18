@@ -32,11 +32,11 @@ fn cache_dir(home: &Path) -> PathBuf {
     {
         let _ = home;
         let local = std::env::var("LOCALAPPDATA").unwrap_or_else(|_| ".".to_string());
-        PathBuf::from(local).join("conv-browser")
+        PathBuf::from(local).join("total-recall")
     }
     #[cfg(not(target_os = "windows"))]
     {
-        home.join(".cache").join("conv-browser")
+        home.join(".cache").join("total-recall")
     }
 }
 
@@ -93,7 +93,7 @@ fn main() {
                 "main",
                 tauri::WebviewUrl::External(url.parse().unwrap()),
             )
-            .title("Conv Browser")
+            .title("Total Recall")
             .inner_size(1300.0, 860.0)
             .min_inner_size(800.0, 600.0)
             .build()?;

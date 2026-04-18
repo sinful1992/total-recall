@@ -1,8 +1,8 @@
 [package]
-name = "conv-browser"
-version = "0.2.1"
+name = "total-recall"
+version = "0.3.0"
 edition = "2021"
-description = "Browse Claude Code conversation history"
+description = "Your complete Claude Code memory, browsable and free"
 license = "MIT"
 
 [dependencies]

@@ -8,7 +8,7 @@ pub fn full_page(sidebar_content: Markup) -> Markup {
         html lang="en" {
             head {
                 meta charset="utf-8";
-                title { "Conv Browser" }
+                title { "Total Recall" }
                 link rel="stylesheet"
                     href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Instrument+Sans:wght@400;500&display=swap";
                 link rel="stylesheet"
@@ -20,7 +20,7 @@ pub fn full_page(sidebar_content: Markup) -> Markup {
             }
             body {
                 div id="topbar" {
-                    span.wordmark { "Conv Browser" }
+                    span.wordmark { "Total Recall" }
                     div id="search-wrap" {
                         span.search-icon { "\u{2315}" }
                         input

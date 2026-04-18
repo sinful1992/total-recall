@@ -1,7 +1,7 @@
 {
-  "productName": "conv-browser",
-  "identifier": "dev.convbrowser",
-  "version": "0.2.1",
+  "productName": "Total Recall",
+  "identifier": "dev.totalrecall",
+  "version": "0.3.0",
   "app": {
     "security": {
       "csp": null
