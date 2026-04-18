@@ -2,7 +2,7 @@
 
 Your complete Claude Code memory — every conversation, every plan, every exchange — browsable and free.
 
-![Total Recall screenshot](https://github.com/sinful1992/conv-browser/releases/download/v0.3.0/screenshot.png)
+![Total Recall screenshot](assets/screenshot.webp)
 
 Memory tools like MemPalace try to decide what matters. They burn tokens on every message mining your history, and still miss half of what you actually need.
 
