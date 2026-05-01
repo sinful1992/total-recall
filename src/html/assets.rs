@@ -73,6 +73,14 @@ body {
   flex-shrink: 0;
 }
 
+.app-version {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--text-dim);
+  flex-shrink: 0;
+  margin-right: 4px;
+}
+
 #search-wrap {
   flex: 1;
   position: relative;

@@ -21,6 +21,7 @@ pub fn full_page(sidebar_content: Markup) -> Markup {
             body {
                 div id="topbar" {
                     span.wordmark { "Total Recall" }
+                    span.app-version { (concat!("v", env!("CARGO_PKG_VERSION"))) }
                     div id="search-wrap" {
                         span.search-icon { "\u{2315}" }
                         input
