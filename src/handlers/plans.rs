@@ -117,6 +117,7 @@ pub async fn plan_handler(State(state): State<AppState>, Path(slug): Path<String
                         h2.sess-hd-title { (title) }
                         div.sess-hd-meta {
                             span.sess-meta-chip { (mtime) }
+                            span.sess-meta-chip { (format!("{}.md", slug)) }
                             span.sess-meta-chip { (format!("{} lines", line_count)) }
                         }
                     }

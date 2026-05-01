@@ -31,12 +31,11 @@ pub fn init_db(db_path: &Path) -> Result<()> {
         );
         CREATE INDEX IF NOT EXISTS ix_msg_session ON messages(session_id, seq);
         CREATE INDEX IF NOT EXISTS ix_sessions_ended ON sessions(ended_at DESC);
+        CREATE INDEX IF NOT EXISTS ix_sessions_refnum ON sessions(ref_num);
     ")?;
-    // Migration: add is_automated if missing
-    let _ = conn.execute(
-        "ALTER TABLE sessions ADD COLUMN is_automated INTEGER DEFAULT 0",
-        [],
-    );
+    let _ = conn.execute("ALTER TABLE sessions ADD COLUMN is_automated INTEGER DEFAULT 0", []);
+    let _ = conn.execute("ALTER TABLE sessions ADD COLUMN ref_num INTEGER", []);
+    let _ = conn.execute("ALTER TABLE sessions ADD COLUMN ref_code TEXT", []);
     Ok(())
 }
 

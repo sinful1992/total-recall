@@ -2,6 +2,34 @@ use chrono::{DateTime, Local, Utc};
 use crate::parser::parse_ts;
 use regex::Regex;
 
+const COLORS: &[&str] = &[
+    "amber","arctic","azure","black","blue","bronze","chrome","cobalt",
+    "coral","crimson","cyan","dark","deep","ember","frost","gold",
+    "grey","ice","iron","jade","lime","navy","olive","onyx",
+    "pale","rose","ruby","rust","sage","sand","steel","teal",
+];
+const ANIMALS: &[&str] = &[
+    "bear","crane","crow","dove","drake","eagle","elk","falcon",
+    "fox","hawk","heron","ibis","jay","kite","lark","lynx",
+    "mink","moth","mule","newt","owl","pike","puma","quail",
+    "rook","seal","stag","swan","vole","wasp","wolf","wren",
+];
+const WORDS: &[&str] = &[
+    "alpha","bay","bravo","canyon","cliff","comet","delta","drift",
+    "dune","echo","flame","flint","forge","gulf","harbor","island",
+    "lance","mesa","moon","nexus","peak","pine","prism","pulse",
+    "ridge","shore","storm","tango","tide","torch","trail","vault",
+];
+
+pub fn session_codename(session_id: &str) -> String {
+    let hex: String = session_id.chars().filter(|c| c.is_ascii_hexdigit()).take(15).collect();
+    let n = u64::from_str_radix(&hex, 16).unwrap_or(0);
+    let a = (n % COLORS.len() as u64) as usize;
+    let b = ((n / COLORS.len() as u64) % ANIMALS.len() as u64) as usize;
+    let c = ((n / (COLORS.len() as u64 * ANIMALS.len() as u64)) % WORDS.len() as u64) as usize;
+    format!("{}-{}-{}", COLORS[a], ANIMALS[b], WORDS[c])
+}
+
 pub static BUCKET_ORDER: &[&str] = &[
     "Today", "Yesterday", "This week", "This month", "Older",
 ];

@@ -2,7 +2,7 @@ use maud::{html, Markup, PreEscaped};
 use rusqlite::Row;
 use crate::helpers::{
     fmt_rel, fmt_date, fmt_ts_short, gap_label, cwd_label, density_pct,
-    date_bucket, BUCKET_ORDER,
+    date_bucket, BUCKET_ORDER, session_codename,
 };
 use crate::parser::parse_ts;
 
@@ -22,6 +22,7 @@ pub fn session_item_html(
     ended_at: &str,
     msg_count: i64,
     is_resumed: i64,
+    ref_num: i64,
     active_sid: Option<&str>,
 ) -> Markup {
     let rel_time = fmt_rel(ended_at);
@@ -29,6 +30,8 @@ pub fn session_item_html(
     let is_active = active_sid == Some(session_id);
     let cls = if is_active { "s-item active" } else { "s-item" };
     let title = if first_user_text.is_empty() { "—" } else { first_user_text };
+
+    let codename = session_codename(session_id);
 
     html! {
         div class=(cls)
@@ -39,7 +42,9 @@ pub fn session_item_html(
             onclick=(format!("activateSession('{}')", session_id))
         {
             p.s-title { (title) }
+            div.s-codename { (codename) }
             div.s-foot {
+                span.s-ref { (format!("#{}", ref_num)) }
                 span.s-time { (rel_time) }
                 div.s-density {
                     div.s-density-fill style=(format!("width:{}%", density)) {}
@@ -62,6 +67,8 @@ pub struct SessionRow {
     pub is_automated: i64,
     pub cwd: String,
     pub project_dir: String,
+    pub ref_num: i64,
+    pub ref_code: String,
 }
 
 impl SessionRow {
@@ -75,6 +82,8 @@ impl SessionRow {
             is_automated: row.get("is_automated")?,
             cwd: row.get::<_, Option<String>>("cwd")?.unwrap_or_default(),
             project_dir: row.get::<_, Option<String>>("project_dir")?.unwrap_or_default(),
+            ref_num: row.get::<_, Option<i64>>("ref_num")?.unwrap_or(0),
+            ref_code: row.get::<_, Option<String>>("ref_code")?.unwrap_or_default(),
         })
     }
 }
@@ -165,7 +174,7 @@ fn drawer_group(bkt: &str, items: &[&SessionRow], is_open: bool) -> Markup {
             }
             div class=(body_cls) id=(format!("db-{}", gid)) {
                 @for s in items {
-                    (session_item_html(&s.session_id, &s.first_user_text, &s.ended_at, s.msg_count, s.is_resumed, None))
+                    (session_item_html(&s.session_id, &s.first_user_text, &s.ended_at, s.msg_count, s.is_resumed, s.ref_num, None))
                 }
             }
         }
@@ -182,7 +191,7 @@ fn proj_group(gid: &str, label: &str, items: &[&SessionRow]) -> Markup {
             }
             div.drawer-body id=(format!("db-{}", gid)) {
                 @for s in items {
-                    (session_item_html(&s.session_id, &s.first_user_text, &s.ended_at, s.msg_count, s.is_resumed, None))
+                    (session_item_html(&s.session_id, &s.first_user_text, &s.ended_at, s.msg_count, s.is_resumed, s.ref_num, None))
                 }
             }
         }
@@ -208,7 +217,7 @@ impl MsgRow {
 }
 
 pub fn session_view_html(
-    _session_id: &str,
+    session_id: &str,
     first_user_text: &str,
     started_at: &str,
     ended_at: &str,
@@ -218,10 +227,12 @@ pub fn session_view_html(
     home: &str,
     messages: &[MsgRow],
     scroll_to_seq: Option<i64>,
+    ref_num: i64,
 ) -> Markup {
     let title = if first_user_text.is_empty() { "Conversation" } else { first_user_text };
     let started = fmt_date(started_at);
     let cwd_label = cwd_label(cwd, home);
+    let codename = session_codename(session_id);
 
     let scroll_script = scroll_to_seq.map(|seq| {
         html! { script { (PreEscaped(format!("scrollToSearchResult({});", seq))) } }
@@ -230,11 +241,12 @@ pub fn session_view_html(
     html! {
         div id="main" {
             div id="main-inner" {
-                // Session header
                 div.sess-hd {
                     button.back-btn onclick="goBack()" { "\u{2190} back" }
                     h2.sess-hd-title { (title) }
                     div.sess-hd-meta {
+                        span.sess-meta-chip.ref-chip { (format!("#{}", ref_num)) }
+                        span.sess-meta-chip.ref-chip { (codename) }
                         span.sess-meta-chip { (started) }
                         span.sess-meta-chip { (cwd_label) }
                         span.sess-meta-chip { (format!("{} messages", msg_count)) }
