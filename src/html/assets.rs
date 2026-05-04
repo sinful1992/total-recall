@@ -693,7 +693,7 @@ body.resizing * { user-select: none !important; }
 
 pub const JS: &str = r#"
 (function initResize() {
-  const KEY = 'conv-browser:left-w';
+  const KEY = 'total-recall:left-w';
   const MIN = 180, MAX = 600;
   const root = document.documentElement;
   const saved = parseInt(localStorage.getItem(KEY) || '', 10);
