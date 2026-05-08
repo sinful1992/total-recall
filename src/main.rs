@@ -73,6 +73,21 @@ fn main() {
     std::thread::spawn(move || {
         let rt = tokio::runtime::Runtime::new().unwrap();
         rt.block_on(async {
+            let db_bg = db_path_clone.clone();
+            let home_bg = home_clone.clone();
+            tokio::spawn(async move {
+                let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(120));
+                interval.tick().await; // skip first tick — already indexed at startup
+                loop {
+                    interval.tick().await;
+                    let db = db_bg.clone();
+                    let home = home_bg.clone();
+                    tokio::task::spawn_blocking(move || {
+                        indexer::build_or_refresh_index(&db, &home);
+                    }).await.ok();
+                }
+            });
+
             let app = routes::make_router(db_path_clone, home_clone);
             let listener = tokio::net::TcpListener::bind(format!("127.0.0.1:{}", port))
                 .await
