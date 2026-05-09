@@ -12,6 +12,7 @@ use std::net::TcpListener;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use notify::Watcher;
+use tauri::Manager;
 use tauri_plugin_updater::UpdaterExt;
 
 #[tauri::command]
