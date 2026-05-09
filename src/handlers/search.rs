@@ -30,6 +30,14 @@ pub async fn handler(
         let conn = crate::db::open(&db_path).unwrap();
         let fts_q = build_fts_query(&q);
 
+        let total: i64 = if !fts_q.is_empty() {
+            conn.query_row(
+                "SELECT COUNT(*) FROM msg_fts JOIN messages m ON m.id = msg_fts.rowid WHERE msg_fts MATCH ?1",
+                [&fts_q],
+                |r| r.get(0),
+            ).unwrap_or(0)
+        } else { 0 };
+
         let rows: Vec<(String, i64, String, String, String, String, String)> = if !fts_q.is_empty() {
             let mut stmt = conn.prepare("
                 SELECT m.session_id, m.seq, m.role,
@@ -68,9 +76,15 @@ pub async fn handler(
             };
         }
 
+        let count_label = if total > 60 {
+            format!("first 60 of {} results for \u{201C}{}\u{201D}", total, q)
+        } else {
+            format!("{} results for \u{201C}{}\u{201D}", rows.len(), q)
+        };
+
         html! {
             div id="main" {
-                div.search-hd { (format!("{} results for \u{201C}{}\u{201D}", rows.len(), q)) }
+                div.search-hd { (count_label) }
                 @for (sid, seq, role, first_user_text, ended_at, cwd, hit) in &rows {
                     div.sr
                         hx-get=(format!("/session/{}?seq={}", sid, seq))

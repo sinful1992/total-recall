@@ -10,6 +10,8 @@ mod routes;
 
 use std::net::TcpListener;
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
+use notify::Watcher;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -98,6 +100,42 @@ fn main() {
 
     wait_ready(port);
     println!("Server ready on :{}", port);
+
+    // Live re-index: watch ~/.claude/projects/ for new/modified JSONL files
+    let projects_dir = home_dir.join(".claude").join("projects");
+    if projects_dir.exists() {
+        let db_path_w = db_path.clone();
+        let home_w = home_dir.clone();
+        std::thread::spawn(move || {
+            let last = Arc::new(Mutex::new(
+                std::time::Instant::now() - std::time::Duration::from_secs(10),
+            ));
+            let last_c = last.clone();
+            let mut watcher = notify::recommended_watcher(
+                move |_res: notify::Result<notify::Event>| {
+                    let should = {
+                        let mut t = last_c.lock().unwrap();
+                        if t.elapsed().as_secs() >= 5 {
+                            *t = std::time::Instant::now();
+                            true
+                        } else {
+                            false
+                        }
+                    };
+                    if should {
+                        indexer::build_or_refresh_index(&db_path_w, &home_w);
+                    }
+                },
+            )
+            .expect("Failed to create file watcher");
+            watcher
+                .watch(&projects_dir, notify::RecursiveMode::Recursive)
+                .expect("Failed to watch projects dir");
+            loop {
+                std::thread::sleep(std::time::Duration::from_secs(3600));
+            }
+        });
+    }
 
     let url = format!("http://127.0.0.1:{}/", port);
 

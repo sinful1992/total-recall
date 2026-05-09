@@ -4,3 +4,5 @@ pub mod session;
 pub mod search;
 pub mod plans;
 pub mod refresh;
+pub mod notes;
+pub mod export;

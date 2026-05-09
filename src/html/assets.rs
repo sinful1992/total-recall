@@ -689,6 +689,79 @@ body.resizing * { user-select: none !important; }
   flex-shrink: 0;
 }
 .plan-copy-btn:hover { color: var(--text); border-color: var(--text-dim); }
+
+.sess-hd-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+.export-btn {
+  padding: 5px 12px;
+  background: transparent;
+  border: 1px solid var(--border-hi);
+  border-radius: var(--radius);
+  color: var(--text-dim);
+  cursor: pointer;
+  font-family: var(--display);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  transition: all 0.12s;
+}
+.export-btn:hover { color: var(--text); border-color: var(--text-dim); }
+
+.sess-notes {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.notes-input {
+  width: 100%;
+  min-height: 64px;
+  padding: 8px 10px;
+  background: var(--bg-el);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text-mid);
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.5;
+  resize: vertical;
+  outline: none;
+  transition: border-color 0.15s;
+}
+.notes-input::placeholder { color: var(--text-dim); opacity: 0.6; }
+.notes-input:focus { border-color: var(--border-hi); }
+.notes-status {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--asst-c);
+  min-height: 14px;
+}
+.notes-saved {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--asst-c);
+}
+
+.load-more-btn {
+  display: block;
+  width: calc(100% - 24px);
+  margin: 6px 12px 8px;
+  padding: 6px 10px;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text-dim);
+  cursor: pointer;
+  font-family: var(--mono);
+  font-size: 10px;
+  text-align: center;
+  transition: all 0.12s;
+}
+.load-more-btn:hover { border-color: var(--border-hi); color: var(--text-mid); }
 "#;
 
 pub const JS: &str = r#"
@@ -852,6 +925,20 @@ document.addEventListener('keydown', function(e) {
     }
   }
 });
+
+async function exportMarkdown(sid, codename) {
+  const resp = await fetch('/session/' + sid + '/markdown');
+  const text = await resp.text();
+  const blob = new Blob([text], { type: 'text/plain' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = codename + '.md';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
 
 document.addEventListener('htmx:afterSwap', function(e) {
   if (e.target.id === 'main') {

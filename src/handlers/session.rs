@@ -23,7 +23,7 @@ pub async fn handler(
         let conn = crate::db::open(&db_path).unwrap();
 
         let sess = conn.query_row(
-            "SELECT session_id, first_user_text, started_at, ended_at, msg_count, is_resumed, cwd, ref_num
+            "SELECT session_id, first_user_text, started_at, ended_at, msg_count, is_resumed, cwd, ref_num, notes
              FROM sessions WHERE session_id=?1",
             [&sid],
             |r| Ok((
@@ -35,6 +35,7 @@ pub async fn handler(
                 r.get::<_, i64>(5)?,
                 r.get::<_, Option<String>>(6)?.unwrap_or_default(),
                 r.get::<_, Option<i64>>(7)?.unwrap_or(0),
+                r.get::<_, Option<String>>(8)?.unwrap_or_default(),
             )),
         );
 
@@ -44,7 +45,7 @@ pub async fn handler(
                     (welcome())
                 }
             },
-            Ok((session_id, first_user_text, started_at, ended_at, msg_count, is_resumed, cwd, ref_num)) => {
+            Ok((session_id, first_user_text, started_at, ended_at, msg_count, is_resumed, cwd, ref_num, notes)) => {
                 let mut stmt = conn
                     .prepare("SELECT seq, role, ts, text FROM messages WHERE session_id=?1 ORDER BY seq")
                     .unwrap();
@@ -66,6 +67,7 @@ pub async fn handler(
                     &messages,
                     scroll_seq,
                     ref_num,
+                    &notes,
                 )
             }
         }

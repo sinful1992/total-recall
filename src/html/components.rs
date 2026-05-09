@@ -122,12 +122,18 @@ pub fn drawer_timeline_html(sessions: &[SessionRow], auto_count: i64, show_autom
         html! {}
     };
 
+    let auto_param = if show_automated { "1" } else { "0" };
+
     html! {
         div id="sidebar" {
             @for &bkt in BUCKET_ORDER {
                 @if let Some(items) = buckets.get(bkt) {
                     @if !items.is_empty() {
-                        (drawer_group(bkt, items, bkt == "Today" || bkt == "Yesterday"))
+                        @if bkt == "Older" {
+                            (drawer_group_older(items, auto_param))
+                        } @else {
+                            (drawer_group(bkt, items, bkt == "Today" || bkt == "Yesterday"))
+                        }
                     }
                 }
             }
@@ -155,6 +161,37 @@ pub fn drawer_projects_html(sessions: &[SessionRow], home: &str) -> Markup {
         div id="sidebar" {
             @for (i, (proj, items)) in sorted.iter().enumerate() {
                 (proj_group(&format!("proj_{}", i), &cwd_label(proj, home), items))
+            }
+        }
+    }
+}
+
+fn drawer_group_older(items: &[&SessionRow], auto_param: &str) -> Markup {
+    const PAGE: usize = 30;
+    let total = items.len();
+    let visible = &items[..total.min(PAGE)];
+    let has_more = total > PAGE;
+
+    html! {
+        div.drawer-group {
+            div.drawer-hd onclick="toggleDrawer('Older')" {
+                span.drawer-arr id="da-Older" { "\u{25B6}" }
+                span.drawer-hd-label { "Older" }
+                span.drawer-count { (total) }
+            }
+            div.drawer-body id="db-Older" {
+                @for s in visible {
+                    (session_item_html(&s.session_id, &s.first_user_text, &s.ended_at, s.msg_count, s.is_resumed, s.ref_num, None))
+                }
+                @if has_more {
+                    button.load-more-btn
+                        hx-get=(format!("/drawer/older-items?offset={}&auto={}", PAGE, auto_param))
+                        hx-target="this"
+                        hx-swap="outerHTML"
+                    {
+                        (format!("Load {} more", (total - PAGE).min(PAGE)))
+                    }
+                }
             }
         }
     }
@@ -228,10 +265,11 @@ pub fn session_view_html(
     messages: &[MsgRow],
     scroll_to_seq: Option<i64>,
     ref_num: i64,
+    notes: &str,
 ) -> Markup {
     let title = if first_user_text.is_empty() { "Conversation" } else { first_user_text };
     let started = fmt_date(started_at);
-    let cwd_label = cwd_label(cwd, home);
+    let cwd_disp = cwd_label(cwd, home);
     let codename = session_codename(session_id);
 
     let scroll_script = scroll_to_seq.map(|seq| {
@@ -248,15 +286,29 @@ pub fn session_view_html(
                         span.sess-meta-chip.ref-chip { (format!("#{}", ref_num)) }
                         span.sess-meta-chip.ref-chip { (codename) }
                         span.sess-meta-chip { (started) }
-                        span.sess-meta-chip { (cwd_label) }
+                        span.sess-meta-chip { (cwd_disp) }
                         span.sess-meta-chip { (format!("{} messages", msg_count)) }
                         @if is_resumed != 0 {
                             span.sess-meta-chip.accent { (format!("resumed · last {}", fmt_rel(ended_at))) }
                         }
                     }
-                    button.copy-all-btn onclick="copyAll(this)" { "copy all" }
+                    div.sess-hd-actions {
+                        button.copy-all-btn onclick="copyAll(this)" { "copy all" }
+                        button.export-btn onclick=(format!("exportMarkdown('{}', '{}')", session_id, codename)) { "export md" }
+                    }
+                    div.sess-notes {
+                        textarea.notes-input
+                            id="notes-input"
+                            name="notes"
+                            placeholder="Add notes about this conversation\u{2026}"
+                            hx-post=(format!("/session/{}/notes", session_id))
+                            hx-trigger="input changed delay:800ms"
+                            hx-target="#notes-status"
+                            hx-include="#notes-input"
+                        { (notes) }
+                        span.notes-status id="notes-status" {}
+                    }
                 }
-                // Messages
                 (render_messages_proper(messages))
                 @if let Some(s) = scroll_script { (s) }
             }
