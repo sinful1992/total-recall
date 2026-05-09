@@ -1,10 +1,18 @@
 {
   "productName": "Total Recall",
   "identifier": "dev.totalrecall",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "app": {
     "security": {
       "csp": null
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDY0QjQ3MzE0MzA2Mzc2OEMKUldTTWRtTXdGSE8wWkFrTVVlalJVMWJ5c2llejBXOE5SN2FBamlrb0VnaVBMQkRqNGtJRVpwckMK",
+      "endpoints": [
+        "https://github.com/sinful1992/total-recall/releases/latest/download/latest.json"
+      ]
     }
   },
   "bundle": {

@@ -12,6 +12,17 @@ use std::net::TcpListener;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use notify::Watcher;
+use tauri_plugin_updater::UpdaterExt;
+
+#[tauri::command]
+async fn install_update(app: tauri::AppHandle) -> Result<(), String> {
+    let updater = app.updater_builder().build().map_err(|e| e.to_string())?;
+    if let Some(update) = updater.check().await.map_err(|e| e.to_string())? {
+        update.download_and_install(|_, _| {}, || {}).await.map_err(|e| e.to_string())?;
+        app.exit(0);
+    }
+    Ok(())
+}
 
 #[derive(Clone)]
 pub struct AppState {
@@ -140,6 +151,7 @@ fn main() {
     let url = format!("http://127.0.0.1:{}/", port);
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(move |app| {
             tauri::WebviewWindowBuilder::new(
                 app,
@@ -150,8 +162,25 @@ fn main() {
             .inner_size(1300.0, 860.0)
             .min_inner_size(800.0, 600.0)
             .build()?;
+
+            let handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
+                if let Ok(updater) = handle.updater_builder().build() {
+                    if let Ok(Some(update)) = updater.check().await {
+                        if let Some(win) = handle.get_webview_window("main") {
+                            let _ = win.eval(&format!(
+                                "if(typeof showUpdateBanner==='function')showUpdateBanner({:?})",
+                                update.version
+                            ));
+                        }
+                    }
+                }
+            });
+
             Ok(())
         })
+        .invoke_handler(tauri::generate_handler![install_update])
         .run(tauri::generate_context!())
         .expect("Failed to run Tauri application");
 }

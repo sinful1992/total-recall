@@ -762,6 +762,37 @@ body.resizing * { user-select: none !important; }
   transition: all 0.12s;
 }
 .load-more-btn:hover { border-color: var(--border-hi); color: var(--text-mid); }
+
+#update-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  background: var(--accent-lo);
+  border-bottom: 1px solid var(--accent);
+  font-size: 12px;
+  font-family: var(--ui);
+  color: var(--accent-hi);
+  flex-shrink: 0;
+}
+#update-banner span { flex: 1; }
+#update-banner button {
+  padding: 3px 10px;
+  background: transparent;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  color: var(--accent);
+  cursor: pointer;
+  font-family: var(--display);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  transition: all 0.12s;
+}
+#update-banner button:hover { color: var(--accent-hi); border-color: var(--accent-hi); }
+#update-banner button:last-child { color: var(--text-dim); border-color: var(--border); }
+#update-banner button:last-child:hover { color: var(--text); border-color: var(--border-hi); }
 "#;
 
 pub const JS: &str = r#"
@@ -938,6 +969,28 @@ async function exportMarkdown(sid, codename) {
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
+}
+
+function showUpdateBanner(version) {
+  if (document.getElementById('update-banner')) return;
+  var b = document.createElement('div');
+  b.id = 'update-banner';
+  b.innerHTML =
+    '<span>&#x2B06; v' + version + ' available</span>' +
+    '<button onclick="installUpdate(this)">Install &amp; Restart</button>' +
+    '<button onclick="this.parentElement.remove()">&#x2715;</button>';
+  document.body.insertBefore(b, document.body.firstChild);
+}
+
+async function installUpdate(btn) {
+  btn.textContent = 'Downloading…';
+  btn.disabled = true;
+  try {
+    await window.__TAURI__.core.invoke('install_update');
+  } catch(e) {
+    btn.textContent = 'failed';
+    btn.disabled = false;
+  }
 }
 
 document.addEventListener('htmx:afterSwap', function(e) {
