@@ -16,6 +16,7 @@ Total Recall stores everything and costs nothing to access. Browse your full his
 - **Per-session notes** — add private notes to any conversation, autosaved
 - **Export as Markdown** — download any session as a `.md` file
 - **Live re-index** — new conversations appear automatically as Claude writes them
+- **In-app auto-update** — notified when a new version is available; installs with one click
 - Completely passive — no writes to your Claude data, ever
 
 ## Installation
@@ -26,9 +27,7 @@ Download the latest release from the [Releases page](https://github.com/sinful19
 |----------|------|
 | Linux (Debian/Ubuntu) | `.deb` |
 | Linux (universal) | `.AppImage` |
-| Windows | `.msi` or `.exe` |
-
-> **Note — unsigned installer:** The Windows installer is not code-signed yet. Windows SmartScreen will show a warning on first launch. Click **"More info" → "Run anyway"** to proceed. The app is safe; signing is on the roadmap.
+| Windows | `.exe` (NSIS installer) |
 
 ### Linux `.deb`
 
@@ -42,6 +41,20 @@ sudo dpkg -i total-recall_*.deb
 chmod +x total-recall_*.AppImage
 ./total-recall_*.AppImage
 ```
+
+### Windows
+
+Run the `.exe` installer. The binary is Authenticode-signed via [SignPath Foundation](https://signpath.org), so Windows SmartScreen will recognise it. If you are on an older release (pre-v1.4.6) and see a SmartScreen warning, click **"More info" → "Run anyway"** — then update to the latest version in-app.
+
+## In-app updates
+
+From v1.4.6 onward, Total Recall checks for new releases at startup. When one is available, a banner appears at the top of the window:
+
+> ↑ v1.x.x available — **Install & Restart** / ✕
+
+Clicking **Install & Restart** downloads the new installer, verifies its signature, runs it silently, and restarts the app. No browser or manual download needed.
+
+> **Note:** Versions before v1.4.6 had a bug where the Authenticode-signed installer and the Tauri update signature were generated from different binaries, causing the update to fail. Install v1.4.6 manually once; auto-update will work for all future releases.
 
 ## Building from source
 
