@@ -988,7 +988,7 @@ async function installUpdate(btn) {
   try {
     await window.__TAURI__.core.invoke('install_update');
   } catch(e) {
-    btn.textContent = 'failed';
+    btn.textContent = 'failed: ' + String(e);
     btn.disabled = false;
   }
 }
