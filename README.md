@@ -23,7 +23,8 @@ Total Recall stores everything and costs nothing to access. Browse your full his
 - **Plans search** — separate search tab for `~/.claude/plans/` markdown files with highlighted snippets
 
 ### Conversation view
-- **Session metadata** — reference number, human-readable codename, start date, working directory, message count
+- **Session referencing** — every conversation gets a stable `#N` number and a human-readable codename (e.g. `#42 · amber-falcon`), shown in both the sidebar and the detail view and included in exported Markdown — use these to refer to a session unambiguously across notes or with Claude
+- **Session metadata** — start date, working directory, message count
 - **Resumed indicator** — sessions with a >2h gap between messages are labelled "resumed"; gap markers appear inline in the transcript
 - **Per-session notes** — add private notes to any conversation, autosaved
 - **Export as Markdown** — download any session as a `.md` file with full metadata header
