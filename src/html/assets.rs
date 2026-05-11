@@ -1070,9 +1070,6 @@ document.addEventListener('htmx:afterSwap', function(e) {
 });
 
 (async function() {
-  for (var i = 0; i < 30 && !window.__TAURI__?.core; i++) {
-    await new Promise(function(r) { setTimeout(r, 100); });
-  }
   try {
     var v = await window.__TAURI__.core.invoke('check_update');
     if (v) showUpdateBanner(v);
