@@ -696,20 +696,52 @@ body.resizing * { user-select: none !important; }
   margin-top: 10px;
 }
 .export-btn {
-  padding: 5px 12px;
+  padding: 3px 9px;
   background: transparent;
-  border: 1px solid var(--border-hi);
+  border: 1px solid var(--border);
   border-radius: var(--radius);
   color: var(--text-dim);
   cursor: pointer;
   font-family: var(--display);
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
   transition: all 0.12s;
 }
-.export-btn:hover { color: var(--text); border-color: var(--text-dim); }
+.export-btn:hover { color: var(--text-mid); border-color: var(--border-hi); }
+
+.fav-btn {
+  padding: 3px 9px;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+  transition: all 0.12s;
+}
+.fav-btn:hover { color: var(--accent); border-color: var(--accent); }
+.fav-btn.active { color: var(--accent-hi); border-color: var(--accent); background: var(--accent-lo); }
+
+.s-fav-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 11px;
+  color: var(--text-dim);
+  padding: 0 1px;
+  line-height: 1;
+  flex-shrink: 0;
+  opacity: 0;
+  transition: color 0.1s, opacity 0.1s;
+}
+.s-item:hover .s-fav-btn { opacity: 1; }
+.s-fav-btn.active { opacity: 1; color: var(--accent); }
+.s-fav-btn:hover { color: var(--accent-hi) !important; }
+.s-item.is-fav { background: var(--accent-lo); border-left-color: var(--accent); }
+.s-item.is-fav:hover { background: var(--bg-hover); }
 
 .sess-notes {
   margin-top: 12px;
@@ -734,6 +766,27 @@ body.resizing * { user-select: none !important; }
 }
 .notes-input::placeholder { color: var(--text-dim); opacity: 0.6; }
 .notes-input:focus { border-color: var(--border-hi); }
+.notes-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+}
+.notes-save-btn {
+  padding: 3px 10px;
+  background: transparent;
+  border: 1px solid var(--border-hi);
+  border-radius: var(--radius);
+  color: var(--text-dim);
+  cursor: pointer;
+  font-family: var(--display);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  transition: all 0.12s;
+}
+.notes-save-btn:hover { color: var(--text); border-color: var(--text-mid); }
 .notes-status {
   font-family: var(--mono);
   font-size: 10px;
@@ -956,6 +1009,16 @@ document.addEventListener('keydown', function(e) {
     }
   }
 });
+
+async function toggleSidebarFav(event, sid) {
+  event.stopPropagation();
+  await fetch('/session/' + sid + '/favourite', { method: 'POST' });
+  const item = event.currentTarget.closest('.s-item');
+  const isFav = item.classList.toggle('is-fav');
+  const btn = event.currentTarget;
+  btn.classList.toggle('active', isFav);
+  btn.title = isFav ? 'Remove from favourites' : 'Mark as favourite';
+}
 
 async function exportMarkdown(sid, codename) {
   const resp = await fetch('/session/' + sid + '/markdown');

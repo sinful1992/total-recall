@@ -91,7 +91,7 @@ pub async fn older_handler(
 
         html! {
             @for s in &sessions {
-                (session_item_html(&s.session_id, &s.first_user_text, &s.ended_at, s.msg_count, s.is_resumed, s.ref_num, None))
+                (session_item_html(&s.session_id, &s.first_user_text, &s.ended_at, s.msg_count, s.is_resumed, s.is_favourite, s.ref_num, None))
             }
             @if has_more {
                 button.load-more-btn

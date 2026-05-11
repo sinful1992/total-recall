@@ -6,3 +6,4 @@ pub mod plans;
 pub mod refresh;
 pub mod notes;
 pub mod export;
+pub mod favourite;

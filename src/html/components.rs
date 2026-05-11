@@ -22,16 +22,19 @@ pub fn session_item_html(
     ended_at: &str,
     msg_count: i64,
     is_resumed: i64,
+    is_favourite: i64,
     ref_num: i64,
     active_sid: Option<&str>,
 ) -> Markup {
     let rel_time = fmt_rel(ended_at);
     let density = density_pct(msg_count);
     let is_active = active_sid == Some(session_id);
-    let cls = if is_active { "s-item active" } else { "s-item" };
+    let mut cls = if is_active { "s-item active".to_string() } else { "s-item".to_string() };
+    if is_favourite != 0 { cls.push_str(" is-fav"); }
     let title = if first_user_text.is_empty() { "—" } else { first_user_text };
-
     let codename = session_codename(session_id);
+    let fav_cls = if is_favourite != 0 { "s-fav-btn active" } else { "s-fav-btn" };
+    let fav_title = if is_favourite != 0 { "Remove from favourites" } else { "Mark as favourite" };
 
     html! {
         div class=(cls)
@@ -53,6 +56,10 @@ pub fn session_item_html(
                 @if is_resumed != 0 {
                     span.s-resumed { "resumed" }
                 }
+                button class=(fav_cls)
+                    onclick=(format!("toggleSidebarFav(event, '{}')", session_id))
+                    title=(fav_title)
+                { "★" }
             }
         }
     }
@@ -65,6 +72,7 @@ pub struct SessionRow {
     pub msg_count: i64,
     pub is_resumed: i64,
     pub is_automated: i64,
+    pub is_favourite: i64,
     pub cwd: String,
     pub project_dir: String,
     pub ref_num: i64,
@@ -80,6 +88,7 @@ impl SessionRow {
             msg_count: row.get("msg_count")?,
             is_resumed: row.get("is_resumed")?,
             is_automated: row.get("is_automated")?,
+            is_favourite: row.get::<_, Option<i64>>("is_favourite")?.unwrap_or(0),
             cwd: row.get::<_, Option<String>>("cwd")?.unwrap_or_default(),
             project_dir: row.get::<_, Option<String>>("project_dir")?.unwrap_or_default(),
             ref_num: row.get::<_, Option<i64>>("ref_num")?.unwrap_or(0),
@@ -181,7 +190,7 @@ fn drawer_group_older(items: &[&SessionRow], auto_param: &str) -> Markup {
             }
             div.drawer-body id="db-Older" {
                 @for s in visible {
-                    (session_item_html(&s.session_id, &s.first_user_text, &s.ended_at, s.msg_count, s.is_resumed, s.ref_num, None))
+                    (session_item_html(&s.session_id, &s.first_user_text, &s.ended_at, s.msg_count, s.is_resumed, s.is_favourite, s.ref_num, None))
                 }
                 @if has_more {
                     button.load-more-btn
@@ -211,7 +220,7 @@ fn drawer_group(bkt: &str, items: &[&SessionRow], is_open: bool) -> Markup {
             }
             div class=(body_cls) id=(format!("db-{}", gid)) {
                 @for s in items {
-                    (session_item_html(&s.session_id, &s.first_user_text, &s.ended_at, s.msg_count, s.is_resumed, s.ref_num, None))
+                    (session_item_html(&s.session_id, &s.first_user_text, &s.ended_at, s.msg_count, s.is_resumed, s.is_favourite, s.ref_num, None))
                 }
             }
         }
@@ -228,7 +237,7 @@ fn proj_group(gid: &str, label: &str, items: &[&SessionRow]) -> Markup {
             }
             div.drawer-body id=(format!("db-{}", gid)) {
                 @for s in items {
-                    (session_item_html(&s.session_id, &s.first_user_text, &s.ended_at, s.msg_count, s.is_resumed, s.ref_num, None))
+                    (session_item_html(&s.session_id, &s.first_user_text, &s.ended_at, s.msg_count, s.is_resumed, s.is_favourite, s.ref_num, None))
                 }
             }
         }
@@ -266,6 +275,7 @@ pub fn session_view_html(
     scroll_to_seq: Option<i64>,
     ref_num: i64,
     notes: &str,
+    is_favourite: i64,
 ) -> Markup {
     let title = if first_user_text.is_empty() { "Conversation" } else { first_user_text };
     let started = fmt_date(started_at);
@@ -295,18 +305,27 @@ pub fn session_view_html(
                     div.sess-hd-actions {
                         button.copy-all-btn onclick="copyAll(this)" { "copy all" }
                         button.export-btn onclick=(format!("exportMarkdown('{}', '{}')", session_id, codename)) { "export md" }
+                        button class=(if is_favourite != 0 { "fav-btn active" } else { "fav-btn" })
+                            hx-post=(format!("/session/{}/favourite", session_id))
+                            hx-target="this"
+                            hx-swap="outerHTML"
+                            title=(if is_favourite != 0 { "Remove from favourites" } else { "Mark as favourite" })
+                        { "★" }
                     }
                     div.sess-notes {
                         textarea.notes-input
                             id="notes-input"
                             name="notes"
                             placeholder="Add notes about this conversation\u{2026}"
-                            hx-post=(format!("/session/{}/notes", session_id))
-                            hx-trigger="input changed delay:800ms"
-                            hx-target="#notes-status"
-                            hx-include="#notes-input"
                         { (notes) }
-                        span.notes-status id="notes-status" {}
+                        div.notes-actions {
+                            button.notes-save-btn
+                                hx-post=(format!("/session/{}/notes", session_id))
+                                hx-target="#notes-status"
+                                hx-include="#notes-input"
+                            { "save note" }
+                            span.notes-status id="notes-status" {}
+                        }
                     }
                 }
                 (render_messages_proper(messages))

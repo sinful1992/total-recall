@@ -37,6 +37,7 @@ pub fn init_db(db_path: &Path) -> Result<()> {
     let _ = conn.execute("ALTER TABLE sessions ADD COLUMN ref_code TEXT", []);
     let _ = conn.execute("CREATE INDEX IF NOT EXISTS ix_sessions_refnum ON sessions(ref_num)", []);
     let _ = conn.execute("ALTER TABLE sessions ADD COLUMN notes TEXT", []);
+    let _ = conn.execute("ALTER TABLE sessions ADD COLUMN is_favourite INTEGER DEFAULT 0", []);
     Ok(())
 }
 

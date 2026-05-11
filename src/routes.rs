@@ -5,7 +5,7 @@ use axum::{
 use std::path::PathBuf;
 
 use crate::AppState;
-use crate::handlers::{drawer, export, index, notes, plans, refresh, search, session};
+use crate::handlers::{drawer, export, favourite, index, notes, plans, refresh, search, session};
 
 pub fn make_router(db_path: PathBuf, home_dir: PathBuf) -> Router {
     let state = AppState { db_path, home_dir };
@@ -15,6 +15,7 @@ pub fn make_router(db_path: PathBuf, home_dir: PathBuf) -> Router {
         .route("/drawer/older-items", get(drawer::older_handler))
         .route("/session/:sid", get(session::handler))
         .route("/session/:sid/notes", post(notes::handler))
+        .route("/session/:sid/favourite", post(favourite::handler))
         .route("/session/:sid/markdown", get(export::handler))
         .route("/search", get(search::handler))
         .route("/search/plans", get(search::plans_handler))
