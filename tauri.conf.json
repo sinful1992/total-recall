@@ -1,8 +1,9 @@
 {
   "productName": "Total Recall",
   "identifier": "dev.totalrecall",
-  "version": "1.5.1",
+  "version": "1.5.2",
   "app": {
+    "withGlobalTauri": true,
     "security": {
       "csp": null
     }

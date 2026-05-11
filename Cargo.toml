@@ -1,6 +1,6 @@
 [package]
 name = "total-recall"
-version = "1.5.1"
+version = "1.5.2"
 edition = "2021"
 description = "Your complete Claude Code memory, browsable and free"
 license = "MIT"
