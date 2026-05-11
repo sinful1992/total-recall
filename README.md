@@ -10,14 +10,37 @@ Total Recall stores everything and costs nothing to access. Browse your full his
 
 ## Features
 
-- Browse every conversation grouped by timeline or project
-- Full-text search across all sessions and plans — shows total match count
-- View plans (thinking blocks) inline alongside conversations
+### Browsing
+- **Timeline view** — conversations grouped into Today, Yesterday, This Week, This Month, Older
+- **Projects view** — conversations grouped by working directory
+- **Starred sessions** — star any conversation; starred sessions are pinned at the top of the timeline
+- **Automated sessions** — hidden by default; toggle to show/hide with a count badge
+- **Older sessions pagination** — the Older group loads 30 at a time to keep the sidebar fast
+
+### Search
+- **Full-text search** — FTS5 search across all conversations with highlighted snippets and total match count
+- **Scroll to match** — clicking a search result opens the conversation and jumps to the matching message
+- **Plans search** — separate search tab for `~/.claude/plans/` markdown files with highlighted snippets
+
+### Conversation view
+- **Session metadata** — reference number, human-readable codename, start date, working directory, message count
+- **Resumed indicator** — sessions with a >2h gap between messages are labelled "resumed"; gap markers appear inline in the transcript
 - **Per-session notes** — add private notes to any conversation, autosaved
-- **Export as Markdown** — download any session as a `.md` file
+- **Export as Markdown** — download any session as a `.md` file with full metadata header
+- **Copy all** — copy the entire conversation transcript to the clipboard
+- **Copy individual messages** — per-message copy button
+
+### Plans
+- **Browse plans** — list all `~/.claude/plans/*.md` files sorted by recency, with line count
+- **Rendered markdown** — plans are rendered as formatted markdown in the detail view
+- **Copy raw** — copy the raw markdown source of any plan
+
+### Data & privacy
+- **Persistent archive** — sessions stay in the local SQLite index even after Claude prunes the source JSONL files (30-day window)
+- **Incremental indexing** — only changed or new files are re-parsed on startup
 - **Live re-index** — new conversations appear automatically as Claude writes them
 - **In-app auto-update** — notified when a new version is available; installs with one click
-- Completely passive — no writes to your Claude data, ever
+- **Completely passive** — no writes to your Claude data, ever; subagent sessions are excluded automatically
 
 ## Installation
 
