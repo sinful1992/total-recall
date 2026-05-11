@@ -97,10 +97,30 @@ impl SessionRow {
     }
 }
 
+fn starred_group(items: &[&SessionRow]) -> Markup {
+    html! {
+        div.starred-group {
+            div.starred-hd {
+                span.starred-hd-icon { "★" }
+                span.starred-hd-label { "Starred" }
+                span.starred-count { (items.len()) }
+            }
+            div.starred-body {
+                @for s in items {
+                    (session_item_html(&s.session_id, &s.first_user_text, &s.ended_at, s.msg_count, s.is_resumed, s.is_favourite, s.ref_num, None))
+                }
+            }
+        }
+    }
+}
+
 pub fn drawer_timeline_html(sessions: &[SessionRow], auto_count: i64, show_automated: bool) -> Markup {
-    // Group into buckets
+    let starred: Vec<&SessionRow> = sessions.iter().filter(|s| s.is_favourite != 0).collect();
+    let regular: Vec<&SessionRow> = sessions.iter().filter(|s| s.is_favourite == 0).collect();
+
+    // Group non-starred into time buckets
     let mut buckets: std::collections::HashMap<&str, Vec<&SessionRow>> = Default::default();
-    for s in sessions {
+    for s in &regular {
         let b = date_bucket(&s.ended_at);
         buckets.entry(b).or_default().push(s);
     }
@@ -135,6 +155,9 @@ pub fn drawer_timeline_html(sessions: &[SessionRow], auto_count: i64, show_autom
 
     html! {
         div id="sidebar" {
+            @if !starred.is_empty() {
+                (starred_group(&starred))
+            }
             @for &bkt in BUCKET_ORDER {
                 @if let Some(items) = buckets.get(bkt) {
                     @if !items.is_empty() {
@@ -291,7 +314,16 @@ pub fn session_view_html(
             div id="main-inner" {
                 div.sess-hd {
                     button.back-btn onclick="goBack()" { "\u{2190} back" }
-                    h2.sess-hd-title { (title) }
+                    div.sess-title-row {
+                        h2.sess-hd-title { (title) }
+                        button class=(if is_favourite != 0 { "fav-btn active" } else { "fav-btn" })
+                            hx-post=(format!("/session/{}/favourite", session_id))
+                            hx-target="this"
+                            hx-swap="outerHTML"
+                            onclick=(format!("onDetailFavClick(event, '{}')", session_id))
+                            title=(if is_favourite != 0 { "Remove from favourites" } else { "Mark as favourite" })
+                        { "★" }
+                    }
                     div.sess-hd-meta {
                         span.sess-meta-chip.ref-chip { (format!("#{}", ref_num)) }
                         span.sess-meta-chip.ref-chip { (codename) }
@@ -305,12 +337,6 @@ pub fn session_view_html(
                     div.sess-hd-actions {
                         button.copy-all-btn onclick="copyAll(this)" { "copy all" }
                         button.export-btn onclick=(format!("exportMarkdown('{}', '{}')", session_id, codename)) { "export md" }
-                        button class=(if is_favourite != 0 { "fav-btn active" } else { "fav-btn" })
-                            hx-post=(format!("/session/{}/favourite", session_id))
-                            hx-target="this"
-                            hx-swap="outerHTML"
-                            title=(if is_favourite != 0 { "Remove from favourites" } else { "Mark as favourite" })
-                        { "★" }
                     }
                     div.sess-notes {
                         textarea.notes-input

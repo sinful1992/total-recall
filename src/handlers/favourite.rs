@@ -28,6 +28,7 @@ pub async fn handler(
                 hx-post=(format!("/session/{}/favourite", sid))
                 hx-target="this"
                 hx-swap="outerHTML"
+                onclick=(format!("onDetailFavClick(event, '{}')", sid))
                 title=(title)
             { "★" }
         }
