@@ -16,6 +16,13 @@ use tauri::Manager;
 use tauri_plugin_updater::UpdaterExt;
 
 #[tauri::command]
+async fn check_update(app: tauri::AppHandle) -> Option<String> {
+    let updater = app.updater_builder().build().ok()?;
+    let update = updater.check().await.ok()??;
+    Some(update.version)
+}
+
+#[tauri::command]
 async fn install_update(app: tauri::AppHandle) -> Result<(), String> {
     let updater = app.updater_builder().build().map_err(|e| e.to_string())?;
     if let Some(update) = updater.check().await.map_err(|e| e.to_string())? {
@@ -164,24 +171,9 @@ fn main() {
             .min_inner_size(800.0, 600.0)
             .build()?;
 
-            let handle = app.handle().clone();
-            tauri::async_runtime::spawn(async move {
-                tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
-                if let Ok(updater) = handle.updater_builder().build() {
-                    if let Ok(Some(update)) = updater.check().await {
-                        if let Some(win) = handle.get_webview_window("main") {
-                            let _ = win.eval(&format!(
-                                "if(typeof showUpdateBanner==='function')showUpdateBanner({:?})",
-                                update.version
-                            ));
-                        }
-                    }
-                }
-            });
-
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![install_update])
+        .invoke_handler(tauri::generate_handler![install_update, check_update])
         .run(tauri::generate_context!())
         .expect("Failed to run Tauri application");
 }

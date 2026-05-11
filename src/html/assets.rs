@@ -1068,4 +1068,11 @@ document.addEventListener('htmx:afterSwap', function(e) {
     }
   }
 });
+
+(async function() {
+  try {
+    const v = await window.__TAURI__.core.invoke('check_update');
+    if (v) showUpdateBanner(v);
+  } catch(e) {}
+})();
 "#;
