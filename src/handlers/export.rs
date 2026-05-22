@@ -60,8 +60,39 @@ pub async fn handler(
                     .collect();
 
                 for (role, ts, text) in &rows {
-                    let label = if role == "user" { "USER" } else { "Claude" };
                     let time = fmt_ts_short(ts);
+                    if role == "tool_use" {
+                        // Parse JSON and render as markdown code block
+                        if let Ok(data) = serde_json::from_str::<serde_json::Value>(text) {
+                            let name = data.get("n").and_then(|v| v.as_str()).unwrap_or("Tool");
+                            match name {
+                                "Edit" | "Write" => {
+                                    let file = data.get("f").and_then(|v| v.as_str()).unwrap_or("?");
+                                    let diff = data.get("d").and_then(|v| v.as_str()).unwrap_or("");
+                                    md.push_str(&format!("**{}** `{}` _{}_\n\n", name, file, time));
+                                    md.push_str("```diff\n");
+                                    md.push_str(diff);
+                                    md.push_str("```\n\n---\n\n");
+                                }
+                                "Bash" => {
+                                    let cmd = data.get("cmd").and_then(|v| v.as_str()).unwrap_or("");
+                                    let desc = data.get("desc").and_then(|v| v.as_str()).unwrap_or("");
+                                    md.push_str(&format!("**Bash** _{}_\n\n", time));
+                                    if !desc.is_empty() { md.push_str(&format!("> {}\n\n", desc)); }
+                                    md.push_str("```sh\n");
+                                    md.push_str(cmd);
+                                    md.push_str("\n```\n\n---\n\n");
+                                }
+                                _ => {
+                                    md.push_str(&format!("**{}** _{}_\n\n", name, time));
+                                    md.push_str(text);
+                                    md.push_str("\n\n---\n\n");
+                                }
+                            }
+                        }
+                        continue;
+                    }
+                    let label = if role == "user" { "USER" } else { "Claude" };
                     md.push_str(&format!("**{}** _{}_\n\n", label, time));
                     md.push_str(text);
                     md.push_str("\n\n---\n\n");

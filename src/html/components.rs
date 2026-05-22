@@ -388,6 +388,10 @@ fn render_messages_proper(messages: &[MsgRow]) -> Markup {
 }
 
 fn render_message(m: &MsgRow) -> Markup {
+    if m.role == "tool_use" {
+        return render_tool_use_message(m);
+    }
+
     let is_user = m.role == "user";
     let msg_cls = if is_user { "msg msg-user" } else { "msg msg-asst" };
     let role_label = if is_user { "USER" } else { "Claude" };
@@ -406,6 +410,110 @@ fn render_message(m: &MsgRow) -> Markup {
                 div.msg-actions {
                     button.copy-btn onclick=(onclick) { "copy" }
                 }
+            }
+        }
+    }
+}
+
+fn render_tool_use_message(m: &MsgRow) -> Markup {
+    let data: serde_json::Value = serde_json::from_str(&m.text).unwrap_or(serde_json::Value::Null);
+    let tool_name = data.get("n").and_then(|v| v.as_str()).unwrap_or("Tool");
+    let ts_label = fmt_ts_short(&m.ts);
+
+    html! {
+        div.msg.msg-tool id=(format!("msg-{}", m.seq)) {
+            div.msg-role-col {
+                span.msg-role-label.tool-role-label { (tool_name) }
+                span.msg-ts { (ts_label) }
+            }
+            div.msg-content-col {
+                (render_tool_body(tool_name, &data))
+            }
+        }
+    }
+}
+
+fn render_tool_body(name: &str, data: &serde_json::Value) -> Markup {
+    match name {
+        "Edit" | "Write" => {
+            let file = data.get("f").and_then(|v| v.as_str()).unwrap_or("?");
+            let diff = data.get("d").and_then(|v| v.as_str()).unwrap_or("");
+            html! {
+                details.tool-call-box open {
+                    summary.tool-call-summary {
+                        span.tool-call-icon {
+                            @if name == "Write" { "✦" } @else { "✎" }
+                        }
+                        span.tool-file { (file) }
+                    }
+                    (render_diff(diff))
+                }
+            }
+        }
+        "Bash" => {
+            let cmd = data.get("cmd").and_then(|v| v.as_str()).unwrap_or("");
+            let desc = data.get("desc").and_then(|v| v.as_str()).unwrap_or("");
+            html! {
+                div.tool-call-box {
+                    @if !desc.is_empty() {
+                        div.tool-call-desc { "▸ " (desc) }
+                    }
+                    pre.tool-bash-cmd { (cmd) }
+                }
+            }
+        }
+        "Read" => {
+            let file = data.get("f").and_then(|v| v.as_str()).unwrap_or("?");
+            let extras = data.get("extras").and_then(|v| v.as_str()).unwrap_or("");
+            html! {
+                div.tool-call-box.tool-call-compact {
+                    span.tool-call-icon { "⊙" }
+                    span.tool-file { (file) }
+                    @if !extras.is_empty() {
+                        span.tool-call-extras { (extras) }
+                    }
+                }
+            }
+        }
+        _ => {
+            // Generic tool
+            let args = data.get("args");
+            html! {
+                div.tool-call-box.tool-call-compact {
+                    @if let Some(a) = args {
+                        @if let Some(obj) = a.as_object() {
+                            @for (k, v) in obj {
+                                @if let Some(s) = v.as_str() {
+                                    div.tool-generic-row {
+                                        span.tool-generic-key { (k) ":" }
+                                        span.tool-generic-val { (s) }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn render_diff(diff: &str) -> Markup {
+    html! {
+        div.diff-block {
+            @for line in diff.lines() {
+                @let cls = if line.starts_with('+') && !line.starts_with("+++") {
+                    "diff-line diff-add"
+                } else if line.starts_with('-') && !line.starts_with("---") {
+                    "diff-line diff-del"
+                } else if line.starts_with("@@") {
+                    "diff-line diff-hunk"
+                } else if line.starts_with("---") || line.starts_with("+++") {
+                    "diff-line diff-file"
+                } else {
+                    "diff-line diff-ctx"
+                };
+                div class=(cls) { (line) }
             }
         }
     }

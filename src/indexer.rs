@@ -7,6 +7,9 @@ use walkdir::WalkDir;
 use crate::helpers::session_codename;
 use crate::parser::{self, Message, SessionMeta};
 
+/// Schema version — bump when the stored message format changes to trigger full re-index.
+const SCHEMA_VERSION: &str = "4";
+
 pub fn build_or_refresh_index(db_path: &Path, home_dir: &Path) {
     println!("Indexing conversations...");
     let projects_dir = home_dir.join(".claude").join("projects");
@@ -17,6 +20,21 @@ pub fn build_or_refresh_index(db_path: &Path, home_dir: &Path) {
         Err(e) => { eprintln!("DB open error: {e}"); return; }
     };
     let _ = conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;");
+
+    // Schema migration: if stored version != current, force full re-index by clearing files table.
+    let stored_version: Option<String> = conn
+        .query_row("SELECT value FROM meta WHERE key='schema_version'", [], |r| r.get(0))
+        .ok();
+    if stored_version.as_deref() != Some(SCHEMA_VERSION) {
+        println!("Schema changed → full re-index");
+        let _ = conn.execute_batch("DELETE FROM files; DELETE FROM messages; DELETE FROM sessions; DELETE FROM msg_fts;");
+        // Reset last_scan_at to 0 so the mtime check doesn't skip old files
+        let _ = conn.execute("INSERT OR REPLACE INTO meta (key, value) VALUES ('last_scan_at', '0')", []);
+        let _ = conn.execute(
+            "INSERT OR REPLACE INTO meta (key, value) VALUES ('schema_version', ?1)",
+            [SCHEMA_VERSION],
+        );
+    }
 
     let last_scan_at: f64 = conn
         .query_row("SELECT value FROM meta WHERE key='last_scan_at'", [], |r| r.get::<_, String>(0))
@@ -195,9 +213,11 @@ fn index_full(
             rusqlite::params![sid, m.seq, m.role, m.ts, m.text],
             |r| r.get(0),
         )?;
+        // Use fts_text if provided (e.g. for tool_use), else index the raw text.
+        let fts = m.fts_text.as_deref().unwrap_or(&m.text);
         tx.execute(
             "INSERT INTO msg_fts(rowid,text,session_id,seq) VALUES (?1,?2,?3,?4)",
-            rusqlite::params![row_id, m.text, sid, m.seq],
+            rusqlite::params![row_id, fts, sid, m.seq],
         )?;
     }
 
@@ -236,7 +256,7 @@ fn index_incremental(
     let mut remainder = String::new();
     reader.read_to_string(&mut remainder).map_err(io_err)?;
 
-    let mut new_msgs: Vec<parser::Message> = Vec::new();
+    let mut new_msgs: Vec<Message> = Vec::new();
     for line in remainder.lines() {
         let line = line.trim();
         if line.is_empty() { continue; }
@@ -244,18 +264,8 @@ fn index_incremental(
             Ok(v) => v,
             Err(_) => continue,
         };
-        let t = match obj.get("type").and_then(|v| v.as_str()) {
-            Some(t) if t == "user" || t == "assistant" => t.to_string(),
-            _ => continue,
-        };
-        let content_val = obj.get("message").and_then(|m| m.get("content"))
-            .cloned().unwrap_or(serde_json::Value::Null);
-        if t == "user" && content_val.is_array() { continue; }
-        let text = parser::extract_text(&content_val);
-        if text.is_empty() { continue; }
-        let ts = obj.get("timestamp").and_then(|v| v.as_str()).unwrap_or("").to_string();
-        new_msgs.push(parser::Message { seq, role: t, ts, text });
-        seq += 1;
+        let (msgs, _) = parser::parse_jsonl_obj(&obj, &mut seq);
+        new_msgs.extend(msgs);
     }
 
     let tx = conn.transaction()?;
@@ -265,15 +275,21 @@ fn index_incremental(
             rusqlite::params![sid, m.seq, m.role, m.ts, m.text],
             |r| r.get(0),
         )?;
+        let fts = m.fts_text.as_deref().unwrap_or(&m.text);
         tx.execute(
             "INSERT INTO msg_fts(rowid,text,session_id,seq) VALUES (?1,?2,?3,?4)",
-            rusqlite::params![row_id, m.text, sid, m.seq],
+            rusqlite::params![row_id, fts, sid, m.seq],
         )?;
     }
 
     if !new_msgs.is_empty() {
         let new_ended = new_msgs.last().map(|m| m.ts.as_str()).unwrap_or("");
-        let new_count = seq;
+        // Recalculate msg_count: count only user/assistant messages for this session
+        let new_count: i64 = tx.query_row(
+            "SELECT COUNT(*) FROM messages WHERE session_id=?1 AND (role='user' OR role='assistant')",
+            [sid],
+            |r| r.get(0),
+        ).unwrap_or(0);
         // Check resume gap between old last and first new
         let mut is_resumed: i64 = tx.query_row(
             "SELECT is_resumed FROM sessions WHERE session_id=?1",
@@ -298,4 +314,3 @@ fn index_incremental(
     )?;
     tx.commit()
 }
-
