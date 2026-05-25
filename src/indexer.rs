@@ -31,14 +31,18 @@ pub fn build_or_refresh_index(db_path: &Path, home_dir: &Path) {
         // FTS5 content tables require the content to still exist when deleting by rowid, so
         // a direct DELETE FROM msg_fts after clearing messages leaves ghost entries that
         // corrupt the index. The 'rebuild' command rebuilds cleanly from the (empty) content table.
-        let _ = conn.execute_batch("DELETE FROM files; DELETE FROM messages; DELETE FROM sessions;");
-        let _ = conn.execute("INSERT INTO msg_fts(msg_fts) VALUES('rebuild')", []);
-        // Reset last_scan_at to 0 so the mtime check doesn't skip old files
-        let _ = conn.execute("INSERT OR REPLACE INTO meta (key, value) VALUES ('last_scan_at', '0')", []);
-        let _ = conn.execute(
-            "INSERT OR REPLACE INTO meta (key, value) VALUES ('schema_version', ?1)",
-            [SCHEMA_VERSION],
-        );
+        // All steps run in one transaction so a mid-migration crash leaves the DB in a consistent
+        // state (schema_version not yet updated → migration re-runs cleanly on next launch).
+        if let Ok(tx) = conn.transaction() {
+            let _ = tx.execute_batch("DELETE FROM files; DELETE FROM messages; DELETE FROM sessions;");
+            let _ = tx.execute("INSERT INTO msg_fts(msg_fts) VALUES('rebuild')", []);
+            let _ = tx.execute("INSERT OR REPLACE INTO meta (key, value) VALUES ('last_scan_at', '0')", []);
+            let _ = tx.execute(
+                "INSERT OR REPLACE INTO meta (key, value) VALUES ('schema_version', ?1)",
+                [SCHEMA_VERSION],
+            );
+            let _ = tx.commit();
+        }
     }
 
     let last_scan_at: f64 = conn

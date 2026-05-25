@@ -5,7 +5,7 @@
 while read local_ref local_sha remote_ref remote_sha; do
     if [[ "$local_ref" == refs/tags/v* ]]; then
         TAG="${local_ref#refs/tags/v}"
-        CARGO=$(grep '^version' Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
+        CARGO=$(python3 -c "import re; print(re.search(r'^version = \"(.+?)\"', open('Cargo.toml').read(), re.M).group(1))")
         TAURI=$(python3 -c "import json; print(json.load(open('tauri.conf.json'))['version'])")
 
         if [[ "$CARGO" != "$TAG" || "$TAURI" != "$TAG" ]]; then
