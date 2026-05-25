@@ -8,7 +8,7 @@ use crate::helpers::session_codename;
 use crate::parser::{self, Message, SessionMeta};
 
 /// Schema version — bump when the stored message format changes to trigger full re-index.
-const SCHEMA_VERSION: &str = "4";
+const SCHEMA_VERSION: &str = "5";
 
 pub fn build_or_refresh_index(db_path: &Path, home_dir: &Path) {
     println!("Indexing conversations...");
@@ -27,13 +27,22 @@ pub fn build_or_refresh_index(db_path: &Path, home_dir: &Path) {
         .ok();
     if stored_version.as_deref() != Some(SCHEMA_VERSION) {
         println!("Schema changed → full re-index");
-        let _ = conn.execute_batch("DELETE FROM files; DELETE FROM messages; DELETE FROM sessions; DELETE FROM msg_fts;");
-        // Reset last_scan_at to 0 so the mtime check doesn't skip old files
-        let _ = conn.execute("INSERT OR REPLACE INTO meta (key, value) VALUES ('last_scan_at', '0')", []);
-        let _ = conn.execute(
-            "INSERT OR REPLACE INTO meta (key, value) VALUES ('schema_version', ?1)",
-            [SCHEMA_VERSION],
-        );
+        // Clear content tables first, then rebuild FTS from the now-empty content table.
+        // FTS5 content tables require the content to still exist when deleting by rowid, so
+        // a direct DELETE FROM msg_fts after clearing messages leaves ghost entries that
+        // corrupt the index. The 'rebuild' command rebuilds cleanly from the (empty) content table.
+        // All steps run in one transaction so a mid-migration crash leaves the DB in a consistent
+        // state (schema_version not yet updated → migration re-runs cleanly on next launch).
+        if let Ok(tx) = conn.transaction() {
+            let _ = tx.execute_batch("DELETE FROM files; DELETE FROM messages; DELETE FROM sessions;");
+            let _ = tx.execute("INSERT INTO msg_fts(msg_fts) VALUES('rebuild')", []);
+            let _ = tx.execute("INSERT OR REPLACE INTO meta (key, value) VALUES ('last_scan_at', '0')", []);
+            let _ = tx.execute(
+                "INSERT OR REPLACE INTO meta (key, value) VALUES ('schema_version', ?1)",
+                [SCHEMA_VERSION],
+            );
+            let _ = tx.commit();
+        }
     }
 
     let last_scan_at: f64 = conn
