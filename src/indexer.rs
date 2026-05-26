@@ -329,9 +329,10 @@ fn index_full(
     // Remove old data (FTS rows must be deleted before messages rows).
     let old_ids: Vec<i64> = {
         let mut stmt = tx.prepare("SELECT id FROM messages WHERE session_id=?1")?;
-        stmt.query_map([sid], |r| r.get(0))?
+        let ids: Vec<i64> = stmt.query_map([sid], |r| r.get(0))?
             .filter_map(|r| r.ok())
-            .collect()
+            .collect();
+        ids
     };
     for id in &old_ids {
         tx.execute("DELETE FROM msg_fts WHERE rowid=?1", [id])?;
