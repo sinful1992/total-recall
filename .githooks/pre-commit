@@ -1,0 +1,50 @@
+#!/bin/sh
+# Pre-commit hook: guard against data-loss regressions in the migration path.
+#
+# When SCHEMA_VERSION is bumped it triggers a full DB wipe + re-index.
+# The migration code MUST preserve sessions whose JSONL files were pruned
+# by Claude, or they are permanently lost.  No Rust toolchain required —
+# this inspects the staged file content directly.
+#
+# Activate once per clone:
+#   git config core.hooksPath .githooks
+
+INDEXER="src/indexer.rs"
+
+# Nothing to check if indexer.rs is not part of this commit.
+if ! git diff --cached --name-only | grep -q "^${INDEXER}$"; then
+    exit 0
+fi
+
+STAGED=$(git show ":${INDEXER}")
+
+fail() {
+    echo ""
+    echo "✗  DATA-LOSS GUARD FAILED: $1"
+    echo ""
+    echo "   The migration path in src/indexer.rs must:"
+    echo "     1. Call snapshot_sessions() before wiping the DB"
+    echo "     2. Pre-insert session stubs so orphaned sessions survive"
+    echo "     3. Preserve notes / is_favourite through index_full()"
+    echo ""
+    echo "   Commit blocked. Restore the safety logic before committing."
+    exit 1
+}
+
+echo "▶  Checking migration safety invariants in ${INDEXER}..."
+
+# 1. Sessions must be snapshotted before the wipe.
+echo "$STAGED" | grep -q "snapshot_sessions(&conn)" \
+    || fail "snapshot_sessions(&conn) missing from migration block."
+
+# 2. Snapshotted sessions must be pre-inserted as stubs so sessions whose
+#    JSONL files were pruned by Claude survive the re-index.
+echo "$STAGED" | grep -q "INSERT OR IGNORE INTO sessions" \
+    || fail "Pre-insert of session stubs (INSERT OR IGNORE INTO sessions) missing."
+
+# 3. index_full must carry notes and is_favourite through any re-index,
+#    not just schema migrations.
+echo "$STAGED" | grep -q "existing_notes" \
+    || fail "index_full() no longer preserves user notes (existing_notes missing)."
+
+echo "✓  Migration safety invariants OK."

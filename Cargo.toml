@@ -21,6 +21,9 @@ regex = "1"
 indexmap = "2"
 notify = "6"
 
+[dev-dependencies]
+tempfile = "3"
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
