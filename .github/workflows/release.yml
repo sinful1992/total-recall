@@ -79,8 +79,7 @@ jobs:
           path: |
             target/release/bundle/deb/*.deb
             target/release/bundle/appimage/*.AppImage
-            target/release/bundle/appimage/*.AppImage.tar.gz
-            target/release/bundle/appimage/*.AppImage.tar.gz.sig
+            target/release/bundle/appimage/*.AppImage.sig
           if-no-files-found: warn
 
   build-windows:
@@ -210,12 +209,14 @@ jobs:
                   'url': 'https://github.com/' + repo + '/releases/download/' + tag + '/' + os.path.basename(win_exes[0]).replace(' ', '.')
               }
 
-          lin_sigs = glob.glob('artifacts/linux/*.AppImage.tar.gz.sig')
-          lin_tgzs = glob.glob('artifacts/linux/*.AppImage.tar.gz')
-          if lin_sigs and lin_tgzs:
+          # Tauri 2 signs the raw AppImage (no .tar.gz); the linux-bundles
+          # artifact keeps its deb/ + appimage/ subdirs, so glob recursively.
+          lin_sigs = glob.glob('artifacts/linux/**/*.AppImage.sig', recursive=True)
+          lin_apps = glob.glob('artifacts/linux/**/*.AppImage', recursive=True)
+          if lin_sigs and lin_apps:
               platforms['linux-x86_64'] = {
                   'signature': open(lin_sigs[0]).read().strip(),
-                  'url': 'https://github.com/' + repo + '/releases/download/' + tag + '/' + os.path.basename(lin_tgzs[0]).replace(' ', '.')
+                  'url': 'https://github.com/' + repo + '/releases/download/' + tag + '/' + os.path.basename(lin_apps[0]).replace(' ', '.')
               }
 
           if platforms:
@@ -238,8 +239,7 @@ jobs:
           files: |
             artifacts/linux/**/*.deb
             artifacts/linux/**/*.AppImage
-            artifacts/linux/**/*.AppImage.tar.gz
-            artifacts/linux/**/*.AppImage.tar.gz.sig
+            artifacts/linux/**/*.AppImage.sig
             artifacts/windows/**/*.exe
             artifacts/windows/**/*.exe.sig
             latest.json
