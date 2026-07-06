@@ -12,7 +12,15 @@ pub async fn handler(
 ) -> Response {
     let db_path = state.db_path.clone();
     tokio::task::spawn_blocking(move || {
-        let conn = crate::db::open(&db_path).unwrap();
+        let conn = match crate::db::open(&db_path) {
+            Ok(c) => c,
+            Err(_) => {
+                return Response::builder()
+                    .status(503)
+                    .body(Body::from("index unavailable"))
+                    .unwrap();
+            }
+        };
 
         let sess = conn.query_row(
             "SELECT session_id, first_user_text, started_at, ended_at, msg_count, is_resumed, cwd, ref_num
@@ -107,5 +115,10 @@ pub async fn handler(
             .unwrap()
     })
     .await
-    .unwrap()
+    .unwrap_or_else(|_| {
+        Response::builder()
+            .status(500)
+            .body(Body::from("export failed"))
+            .unwrap()
+    })
 }

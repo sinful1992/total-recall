@@ -580,6 +580,75 @@ body.resizing * { user-select: none !important; }
   gap: 8px;
 }
 
+.search-filters {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-el);
+}
+.sfilter {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-mid);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 4px 8px;
+  max-width: 220px;
+}
+.sfilter:focus { border-color: var(--border-hi); outline: none; }
+.sfilter-toggle {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-mid);
+  cursor: pointer;
+  user-select: none;
+}
+.sfilter-toggle input { accent-color: var(--accent); cursor: pointer; }
+
+.sgroup { border-bottom: 1px solid var(--border); }
+.sgroup-hd {
+  padding: 12px 16px 8px;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+.sgroup-hd:hover { background: var(--bg-el); }
+.sgroup-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sgroup-meta {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--text-dim);
+  display: flex;
+  gap: 8px;
+}
+.sgroup-ref { color: var(--accent); }
+.sgroup-count { margin-left: auto; }
+.sr-grouped {
+  padding: 8px 16px 8px 28px;
+  border-bottom: none;
+}
+.sr-more {
+  padding: 6px 16px 12px 28px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+.sr-more:hover { color: var(--text-mid); }
+
 .htmx-request #main { opacity: 0.6; transition: opacity 0.15s; }
 
 .auto-chip {
@@ -1128,13 +1197,35 @@ function copyPlanRaw(btn) {
   });
 }
 
+function searchUrl() {
+  var input = document.getElementById('search-input');
+  var q = input ? input.value.trim() : '';
+  var base = input ? (input.getAttribute('hx-get') || '/search') : '/search';
+  return base + '?q=' + encodeURIComponent(q);
+}
+
+function runSearch() {
+  htmx.ajax('GET', searchUrl(), {target: '#main', swap: 'outerHTML'});
+}
+
+// Attach active filter values to every conversation-search request, whether
+// triggered by typing (input hx-get) or by a filter control (runSearch).
+document.body.addEventListener('htmx:configRequest', function(e) {
+  if (e.detail.path.indexOf('/search') !== 0 || e.detail.path.indexOf('/search/plans') === 0) return;
+  var proj = document.getElementById('sf-project');
+  var fav  = document.getElementById('sf-fav');
+  var sub  = document.getElementById('sf-sub');
+  if (proj && proj.value) e.detail.parameters['project'] = proj.value;
+  if (fav && fav.checked) e.detail.parameters['fav'] = '1';
+  if (sub && sub.checked) e.detail.parameters['sub'] = '1';
+});
+
 function goBack() {
   var input = document.getElementById('search-input');
   var q = input ? input.value.trim() : '';
   document.querySelectorAll('.s-item').forEach(function(el) { el.classList.remove('active'); });
   if (q.length >= 2) {
-    var url = input.getAttribute('hx-get') || '/search';
-    htmx.ajax('GET', url + '?q=' + encodeURIComponent(q), {target: '#main', swap: 'outerHTML'});
+    htmx.ajax('GET', searchUrl(), {target: '#main', swap: 'outerHTML'});
   } else {
     document.getElementById('main').innerHTML =
       '<div class="welcome"><div class="welcome-icon">\u25C8</div>' +

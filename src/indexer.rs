@@ -1,14 +1,19 @@
 use rusqlite::Connection;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::sync::Mutex;
 use walkdir::WalkDir;
 
 use crate::helpers::session_codename;
 use crate::parser::{self, Message, SessionMeta};
 
 /// Schema version — bump when the stored message format changes to trigger full re-index.
-const SCHEMA_VERSION: &str = "5";
+const SCHEMA_VERSION: &str = "6";
+
+/// Startup, the 120s timer, the file watcher, and POST /refresh can all call
+/// build_or_refresh_index from different threads. Serialize them: overlapping
+/// runs on separate connections would hit SQLITE_BUSY mid-index.
+static INDEX_LOCK: Mutex<()> = Mutex::new(());
 
 // ---------------------------------------------------------------------------
 // Migration snapshot
@@ -28,6 +33,7 @@ pub(crate) struct SavedSession {
     pub first_user_text: String,
     pub is_resumed: i64,
     pub is_automated: i64,
+    pub is_subagent: i64,
     pub ref_num: Option<i64>,
     pub ref_code: Option<String>,
     pub notes: Option<String>,
@@ -39,7 +45,7 @@ pub(crate) struct SavedSession {
 pub(crate) fn snapshot_sessions(conn: &Connection) -> Vec<SavedSession> {
     let mut stmt = match conn.prepare(
         "SELECT session_id, file_path, project_dir, cwd, started_at, ended_at,
-                msg_count, first_user_text, is_resumed, is_automated,
+                msg_count, first_user_text, is_resumed, is_automated, is_subagent,
                 ref_num, ref_code, notes, is_favourite
          FROM sessions",
     ) {
@@ -58,10 +64,11 @@ pub(crate) fn snapshot_sessions(conn: &Connection) -> Vec<SavedSession> {
             first_user_text: r.get::<_, Option<String>>(7)?.unwrap_or_default(),
             is_resumed:      r.get::<_, Option<i64>>(8)?.unwrap_or(0),
             is_automated:    r.get::<_, Option<i64>>(9)?.unwrap_or(0),
-            ref_num:         r.get(10)?,
-            ref_code:        r.get(11)?,
-            notes:           r.get(12)?,
-            is_favourite:    r.get::<_, Option<i64>>(13)?.unwrap_or(0),
+            is_subagent:     r.get::<_, Option<i64>>(10)?.unwrap_or(0),
+            ref_num:         r.get(11)?,
+            ref_code:        r.get(12)?,
+            notes:           r.get(13)?,
+            is_favourite:    r.get::<_, Option<i64>>(14)?.unwrap_or(0),
         })
     })
     .unwrap()
@@ -74,18 +81,21 @@ pub(crate) fn snapshot_sessions(conn: &Connection) -> Vec<SavedSession> {
 // ---------------------------------------------------------------------------
 
 pub fn build_or_refresh_index(db_path: &Path, home_dir: &Path) {
+    let _guard = INDEX_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+
     println!("Indexing conversations...");
     let projects_dir = home_dir.join(".claude").join("projects");
     if !projects_dir.exists() { return; }
 
-    let mut conn = match Connection::open(db_path) {
+    let mut conn = match crate::db::open(db_path) {
         Ok(c) => c,
         Err(e) => { eprintln!("DB open error: {e}"); return; }
     };
-    let _ = conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;");
 
     // -----------------------------------------------------------------------
-    // Schema migration — wipes and re-indexes, but preserves every session.
+    // Schema migration — wipes and re-indexes, but preserves every session,
+    // and preserves full message content for sessions whose source JSONL has
+    // been pruned by Claude (the DB is their only remaining copy).
     // -----------------------------------------------------------------------
     let stored_version: Option<String> = conn
         .query_row("SELECT value FROM meta WHERE key='schema_version'", [], |r| r.get(0))
@@ -98,7 +108,24 @@ pub fn build_or_refresh_index(db_path: &Path, home_dir: &Path) {
         let saved = snapshot_sessions(&conn);
         let saved_count = saved.len();
 
-        // 2. Find the highest existing ref_num so new assignments don't collide
+        // 2. Sessions whose source file still exists get their messages wiped
+        //    and re-parsed below. Orphans (file pruned) keep their messages.
+        let live_sids: Vec<String> = {
+            let mut stmt = match conn.prepare("SELECT session_id, path FROM files") {
+                Ok(s) => s,
+                Err(_) => { eprintln!("files table read failed"); return; }
+            };
+            stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))
+                .map(|rows| {
+                    rows.filter_map(|r| r.ok())
+                        .filter(|(_, path)| Path::new(path).exists())
+                        .map(|(sid, _)| sid)
+                        .collect()
+                })
+                .unwrap_or_default()
+        };
+
+        // 3. Find the highest existing ref_num so new assignments don't collide
         //    with the ones we're about to restore.
         let max_existing_ref_num: i64 = saved.iter()
             .filter_map(|s| s.ref_num)
@@ -107,18 +134,18 @@ pub fn build_or_refresh_index(db_path: &Path, home_dir: &Path) {
         let mut next_ref_num = max_existing_ref_num + 1;
 
         if let Ok(tx) = conn.transaction() {
-            // Wipe content tables.  FTS5 content tables must be rebuilt from
-            // the (now-empty) messages table rather than deleted directly.
-            let _ = tx.execute_batch(
-                "DELETE FROM files; DELETE FROM messages; DELETE FROM sessions;",
-            );
+            for sid in &live_sids {
+                let _ = tx.execute("DELETE FROM messages WHERE session_id=?1", [sid]);
+            }
+            let _ = tx.execute_batch("DELETE FROM files; DELETE FROM sessions;");
+            // FTS index must be rebuilt from the (partially wiped) content table.
             let _ = tx.execute("INSERT INTO msg_fts(msg_fts) VALUES('rebuild')", []);
 
-            // 3. Pre-insert every snapshotted session as a stub row.
+            // 4. Pre-insert every snapshotted session as a stub row.
             //    index_full (below) will overwrite rows whose source files
             //    still exist, preserving ref_num / notes / is_favourite.
             //    Rows whose files are gone are never touched by the walk and
-            //    so survive as permanent stubs — the DB is the archive.
+            //    so survive as permanent stubs — with their messages intact.
             for s in &saved {
                 let ref_code = s.ref_code.clone()
                     .unwrap_or_else(|| session_codename(&s.session_id));
@@ -130,22 +157,18 @@ pub fn build_or_refresh_index(db_path: &Path, home_dir: &Path) {
                 let _ = tx.execute(
                     "INSERT OR IGNORE INTO sessions
                      (session_id, file_path, project_dir, cwd, started_at, ended_at,
-                      msg_count, first_user_text, is_resumed, is_automated,
+                      msg_count, first_user_text, is_resumed, is_automated, is_subagent,
                       ref_num, ref_code, notes, is_favourite)
-                     VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14)",
+                     VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15)",
                     rusqlite::params![
                         s.session_id, s.file_path, s.project_dir, s.cwd,
                         s.started_at, s.ended_at, s.msg_count, s.first_user_text,
-                        s.is_resumed, s.is_automated,
+                        s.is_resumed, s.is_automated, s.is_subagent,
                         ref_num, ref_code, s.notes, s.is_favourite,
                     ],
                 );
             }
 
-            let _ = tx.execute(
-                "INSERT OR REPLACE INTO meta (key, value) VALUES ('last_scan_at', '0')",
-                [],
-            );
             let _ = tx.execute(
                 "INSERT OR REPLACE INTO meta (key, value) VALUES ('schema_version', ?1)",
                 [SCHEMA_VERSION],
@@ -215,20 +238,10 @@ pub fn build_or_refresh_index(db_path: &Path, home_dir: &Path) {
         .collect()
     };
 
-    let last_scan_at: f64 = conn
-        .query_row("SELECT value FROM meta WHERE key='last_scan_at'", [], |r| r.get::<_, String>(0))
-        .ok()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(0.0);
-
     let mut jsonl_paths: Vec<PathBuf> = WalkDir::new(&projects_dir)
         .into_iter()
         .filter_map(|e| e.ok())
-        .filter(|e| {
-            let p = e.path();
-            p.extension().and_then(|x| x.to_str()) == Some("jsonl")
-                && !p.components().any(|c| c.as_os_str() == "subagents")
-        })
+        .filter(|e| e.path().extension().and_then(|x| x.to_str()) == Some("jsonl"))
         .map(|e| e.path().to_path_buf())
         .collect();
     jsonl_paths.sort();
@@ -241,15 +254,11 @@ pub fn build_or_refresh_index(db_path: &Path, home_dir: &Path) {
             Err(_) => continue,
         };
         let mtime = stat.modified().ok()
-            .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
             .map(|d| d.as_secs_f64())
             .unwrap_or(0.0);
         let size = stat.len() as i64;
         let path_str = path.to_string_lossy().into_owned();
-
-        if mtime < last_scan_at {
-            continue;
-        }
 
         if let Some((cached_mtime, cached_size, cached_sid)) = known.get(&path_str) {
             if *cached_mtime == mtime && *cached_size == size {
@@ -274,14 +283,6 @@ pub fn build_or_refresh_index(db_path: &Path, home_dir: &Path) {
         }
     }
 
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_secs_f64();
-    let _ = conn.execute(
-        "INSERT OR REPLACE INTO meta (key, value) VALUES ('last_scan_at', ?1)",
-        [now.to_string()],
-    );
     println!("Indexing done. {} updated.", count_new);
 }
 
@@ -344,28 +345,19 @@ fn index_full(
     tx.execute(
         "INSERT INTO sessions
          (session_id, file_path, project_dir, cwd, started_at, ended_at,
-          msg_count, first_user_text, is_resumed, is_automated,
+          msg_count, first_user_text, is_resumed, is_automated, is_subagent,
           ref_num, ref_code, notes, is_favourite)
-         VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14)",
+         VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15)",
         rusqlite::params![
             sid, meta.file_path, meta.project_dir, meta.cwd,
             meta.started_at, meta.ended_at, meta.msg_count,
-            meta.first_user_text, meta.is_resumed, meta.is_automated,
+            meta.first_user_text, meta.is_resumed, meta.is_automated, meta.is_subagent,
             ref_num, ref_code, existing_notes, existing_is_fav,
         ],
     )?;
 
     for m in messages {
-        let row_id: i64 = tx.query_row(
-            "INSERT INTO messages (session_id,seq,role,ts,text) VALUES (?1,?2,?3,?4,?5) RETURNING id",
-            rusqlite::params![sid, m.seq, m.role, m.ts, m.text],
-            |r| r.get(0),
-        )?;
-        let fts = m.fts_text.as_deref().unwrap_or(&m.text);
-        tx.execute(
-            "INSERT INTO msg_fts(rowid,text,session_id,seq) VALUES (?1,?2,?3,?4)",
-            rusqlite::params![row_id, fts, sid, m.seq],
-        )?;
+        insert_message(&tx, sid, m)?;
     }
 
     tx.execute(
@@ -373,6 +365,25 @@ fn index_full(
         rusqlite::params![meta.file_path, mtime, size, sid],
     )?;
     tx.commit()
+}
+
+/// Insert one message row plus its FTS entry. search_text is stored on the
+/// messages row itself because msg_fts is an external-content table — the
+/// indexed value and the content-table value must be identical or deletes
+/// corrupt the FTS index.
+fn insert_message(tx: &rusqlite::Transaction<'_>, sid: &str, m: &Message) -> rusqlite::Result<()> {
+    let search_text = m.fts_text.as_deref().unwrap_or(&m.text);
+    let row_id: i64 = tx.query_row(
+        "INSERT INTO messages (session_id,seq,role,ts,text,search_text)
+         VALUES (?1,?2,?3,?4,?5,?6) RETURNING id",
+        rusqlite::params![sid, m.seq, m.role, m.ts, m.text, search_text],
+        |r| r.get(0),
+    )?;
+    tx.execute(
+        "INSERT INTO msg_fts(rowid,search_text,session_id,seq) VALUES (?1,?2,?3,?4)",
+        rusqlite::params![row_id, search_text, sid, m.seq],
+    )?;
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
@@ -421,16 +432,7 @@ fn index_incremental(
 
     let tx = conn.transaction()?;
     for m in &new_msgs {
-        let row_id: i64 = tx.query_row(
-            "INSERT INTO messages (session_id,seq,role,ts,text) VALUES (?1,?2,?3,?4,?5) RETURNING id",
-            rusqlite::params![sid, m.seq, m.role, m.ts, m.text],
-            |r| r.get(0),
-        )?;
-        let fts = m.fts_text.as_deref().unwrap_or(&m.text);
-        tx.execute(
-            "INSERT INTO msg_fts(rowid,text,session_id,seq) VALUES (?1,?2,?3,?4)",
-            rusqlite::params![row_id, fts, sid, m.seq],
-        )?;
+        insert_message(&tx, sid, m)?;
     }
 
     if !new_msgs.is_empty() {
@@ -492,6 +494,29 @@ mod tests {
         fs::write(dir.join(format!("{}.jsonl", sid)), content).unwrap();
     }
 
+    /// Write a session containing a tool_use block (indexed via fts_text,
+    /// which differs from the stored text — the FTS-corruption trigger).
+    fn write_tool_session(dir: &Path, sid: &str, file_arg: &str, ts: &str) {
+        let content = format!(
+            "{}\n{}\n",
+            serde_json::json!({
+                "type": "user",
+                "message": { "role": "user", "content": "edit something" },
+                "timestamp": ts
+            }),
+            serde_json::json!({
+                "type": "assistant",
+                "message": { "role": "assistant", "content": [
+                    { "type": "text", "text": "Editing now." },
+                    { "type": "tool_use", "name": "Edit", "id": "t1",
+                      "input": { "file_path": file_arg, "old_string": "aaa", "new_string": "bbb" } }
+                ]},
+                "timestamp": ts
+            })
+        );
+        fs::write(dir.join(format!("{}.jsonl", sid)), content).unwrap();
+    }
+
     /// Simulate a schema-version mismatch so the next build_or_refresh_index
     /// triggers the full migration path.
     fn force_schema_mismatch(db_path: &Path) {
@@ -500,6 +525,11 @@ mod tests {
             "INSERT OR REPLACE INTO meta (key, value) VALUES ('schema_version', '99')",
             [],
         ).unwrap();
+    }
+
+    fn fts_integrity_ok(conn: &Connection) -> bool {
+        conn.execute("INSERT INTO msg_fts(msg_fts, rank) VALUES('integrity-check', 1)", [])
+            .is_ok()
     }
 
     // -----------------------------------------------------------------------
@@ -563,6 +593,173 @@ mod tests {
             )
             .unwrap() > 0;
         assert!(live_present, "active session must still be in DB after re-index");
+    }
+
+    // -----------------------------------------------------------------------
+    // Orphaned sessions must keep their MESSAGE CONTENT across migrations,
+    // not just their metadata stub — the DB is their only remaining copy.
+    // -----------------------------------------------------------------------
+    #[test]
+    fn schema_migration_preserves_orphaned_messages() {
+        let tmp = TempDir::new().unwrap();
+        let db_path = tmp.path().join("test.sqlite");
+        let home = tmp.path().to_path_buf();
+
+        let proj = home.join(".claude").join("projects").join("proj4");
+        fs::create_dir_all(&proj).unwrap();
+
+        let sid_gone = "dddd4444eeee5555ffff6666aaaa7777";
+        write_session(&proj, sid_gone, "the unforgettable question", "2026-01-01T10:00:00Z");
+
+        crate::db::init_db(&db_path).unwrap();
+        build_or_refresh_index(&db_path, &home);
+
+        fs::remove_file(proj.join(format!("{}.jsonl", sid_gone))).unwrap();
+        force_schema_mismatch(&db_path);
+        build_or_refresh_index(&db_path, &home);
+
+        let conn = crate::db::open(&db_path).unwrap();
+        let msg_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM messages WHERE session_id=?1",
+                rusqlite::params![sid_gone],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(msg_count, 2, "orphaned session must keep its messages across migration");
+
+        // And they must still be searchable after the FTS rebuild.
+        let hits: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM msg_fts WHERE msg_fts MATCH 'unforgettable'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert!(hits > 0, "orphaned messages must remain searchable");
+        assert!(fts_integrity_ok(&conn), "FTS index must pass integrity-check");
+    }
+
+    // -----------------------------------------------------------------------
+    // Regression for FTS corruption: re-indexing a session whose file shrank
+    // (full re-parse path) must leave the FTS index consistent — the old
+    // design indexed tool_use rows with text that differed from the content
+    // table, so deletes removed the wrong tokens and corrupted the index.
+    // -----------------------------------------------------------------------
+    #[test]
+    fn reindex_after_shrink_keeps_fts_consistent() {
+        let tmp = TempDir::new().unwrap();
+        let db_path = tmp.path().join("test.sqlite");
+        let home = tmp.path().to_path_buf();
+
+        let proj = home.join(".claude").join("projects").join("proj5");
+        fs::create_dir_all(&proj).unwrap();
+
+        let sid = "eeee5555ffff6666aaaa7777bbbb8888";
+        write_tool_session(&proj, sid, "/very/unique/zebra_path.rs", "2026-03-01T10:00:00Z");
+
+        crate::db::init_db(&db_path).unwrap();
+        build_or_refresh_index(&db_path, &home);
+
+        {
+            let conn = crate::db::open(&db_path).unwrap();
+            let hits: i64 = conn
+                .query_row("SELECT COUNT(*) FROM msg_fts WHERE msg_fts MATCH 'zebra_path'", [], |r| r.get(0))
+                .unwrap();
+            assert!(hits > 0, "tool_use fts text must be searchable");
+        }
+
+        // Rewrite the file SMALLER with different content → full re-index path.
+        write_session(&proj, sid, "tiny", "2026-03-01T11:00:00Z");
+        build_or_refresh_index(&db_path, &home);
+
+        let conn = crate::db::open(&db_path).unwrap();
+        let stale: i64 = conn
+            .query_row("SELECT COUNT(*) FROM msg_fts WHERE msg_fts MATCH 'zebra_path'", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(stale, 0, "old tool_use tokens must be gone after re-index");
+        assert!(fts_integrity_ok(&conn), "FTS index must pass integrity-check after re-index");
+    }
+
+    // -----------------------------------------------------------------------
+    // A file that appears with an mtime in the past (backup restore, cp -p)
+    // must still be indexed — the old last_scan_at short-circuit skipped it.
+    // -----------------------------------------------------------------------
+    #[test]
+    fn old_mtime_file_gets_indexed() {
+        let tmp = TempDir::new().unwrap();
+        let db_path = tmp.path().join("test.sqlite");
+        let home = tmp.path().to_path_buf();
+
+        let proj = home.join(".claude").join("projects").join("proj6");
+        fs::create_dir_all(&proj).unwrap();
+
+        let sid_first = "ffff6666aaaa7777bbbb8888cccc9999";
+        write_session(&proj, sid_first, "first session", "2026-01-01T10:00:00Z");
+
+        crate::db::init_db(&db_path).unwrap();
+        build_or_refresh_index(&db_path, &home);
+
+        // A restored file appears with an OLD mtime (a year ago).
+        let sid_restored = "6666ffff7777aaaa8888bbbb9999cccc";
+        write_session(&proj, sid_restored, "restored session", "2025-01-01T10:00:00Z");
+        let restored_path = proj.join(format!("{}.jsonl", sid_restored));
+        let old_time = std::time::SystemTime::now() - std::time::Duration::from_secs(365 * 86400);
+        fs::File::options().write(true).open(&restored_path).unwrap()
+            .set_modified(old_time).unwrap();
+
+        build_or_refresh_index(&db_path, &home);
+
+        let conn = crate::db::open(&db_path).unwrap();
+        let present: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sessions WHERE session_id=?1",
+                rusqlite::params![sid_restored],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(present, 1, "file with old mtime must be indexed");
+    }
+
+    // -----------------------------------------------------------------------
+    // Subagent transcripts are indexed and flagged.
+    // -----------------------------------------------------------------------
+    #[test]
+    fn subagent_sessions_indexed_and_flagged() {
+        let tmp = TempDir::new().unwrap();
+        let db_path = tmp.path().join("test.sqlite");
+        let home = tmp.path().to_path_buf();
+
+        let proj = home.join(".claude").join("projects").join("proj7");
+        let sub = proj.join("some-session").join("subagents");
+        fs::create_dir_all(&sub).unwrap();
+
+        let sid_main = "7777bbbb8888cccc9999dddd0000eeee";
+        let sid_sub  = "bbbb7777cccc8888dddd9999eeee0000";
+        write_session(&proj, sid_main, "main session", "2026-05-01T10:00:00Z");
+        write_session(&sub, sid_sub, "subagent task", "2026-05-01T10:05:00Z");
+
+        crate::db::init_db(&db_path).unwrap();
+        build_or_refresh_index(&db_path, &home);
+
+        let conn = crate::db::open(&db_path).unwrap();
+        let sub_flag: i64 = conn
+            .query_row(
+                "SELECT is_subagent FROM sessions WHERE session_id=?1",
+                rusqlite::params![sid_sub],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(sub_flag, 1, "subagent session must be flagged");
+
+        let main_flag: i64 = conn
+            .query_row(
+                "SELECT is_subagent FROM sessions WHERE session_id=?1",
+                rusqlite::params![sid_main],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(main_flag, 0, "main session must not be flagged");
     }
 
     // -----------------------------------------------------------------------

@@ -19,7 +19,9 @@ pub async fn sidebar_handler(State(state): State<AppState>) -> Markup {
 
     tokio::task::spawn_blocking(move || {
         let mut paths: Vec<_> = std::fs::read_dir(&dir)
-            .unwrap()
+            .map(|rd| rd.collect::<Vec<_>>())
+            .unwrap_or_default()
+            .into_iter()
             .filter_map(|e| e.ok())
             .filter(|e| e.path().extension().and_then(|x| x.to_str()) == Some("md"))
             .collect();
@@ -71,7 +73,7 @@ pub async fn sidebar_handler(State(state): State<AppState>) -> Markup {
         }
     })
     .await
-    .unwrap()
+    .unwrap_or_else(|_| crate::html::components::error_page("plans sidebar failed"))
 }
 
 pub async fn plan_handler(State(state): State<AppState>, Path(slug): Path<String>) -> Markup {
@@ -131,7 +133,7 @@ pub async fn plan_handler(State(state): State<AppState>, Path(slug): Path<String
         }
     })
     .await
-    .unwrap()
+    .unwrap_or_else(|_| crate::html::components::error_page("failed to load plan"))
 }
 
 fn fmt_rel_mtime(path: &std::path::Path) -> String {

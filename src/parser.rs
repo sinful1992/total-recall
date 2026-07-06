@@ -33,6 +33,7 @@ pub struct SessionMeta {
     pub first_user_text: String,
     pub is_resumed: i64,
     pub is_automated: i64,
+    pub is_subagent: i64,
 }
 
 pub fn extract_text(content: &Value) -> String {
@@ -198,7 +199,9 @@ fn build_tool_use_text(name: &str, input: &Value) -> (String, String) {
             let fts = if !desc.is_empty() {
                 format!("Bash: {}", desc)
             } else {
-                format!("Bash: {}", &cmd[..cmd.len().min(120)])
+                // chars(), not a byte slice — a multibyte char at the cut
+                // point would panic and kill indexing.
+                format!("Bash: {}", cmd.chars().take(120).collect::<String>())
             };
             (json, fts)
         }
@@ -320,6 +323,7 @@ pub fn parse_session(path: &std::path::Path) -> Option<(SessionMeta, Vec<Message
 
     let session_id = path.file_stem()?.to_str()?.to_string();
     let project_dir = path.parent()?.file_name()?.to_str()?.to_string();
+    let is_subagent = if path.components().any(|c| c.as_os_str() == "subagents") { 1 } else { 0 };
     let started_at = messages.first().map(|m| m.ts.clone()).unwrap_or_default();
     let ended_at = messages.last().map(|m| m.ts.clone()).unwrap_or_default();
 
@@ -335,6 +339,7 @@ pub fn parse_session(path: &std::path::Path) -> Option<(SessionMeta, Vec<Message
             first_user_text,
             is_resumed,
             is_automated,
+            is_subagent,
         },
         messages,
     ))
@@ -359,4 +364,39 @@ pub fn parse_ts(ts: &str) -> Option<chrono::DateTime<chrono::Utc>> {
     if ts.is_empty() { return None; }
     ts.parse::<chrono::DateTime<chrono::Utc>>().ok()
         .or_else(|| chrono::DateTime::parse_from_rfc3339(ts).ok().map(|dt| dt.with_timezone(&chrono::Utc)))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Regression: a multibyte char straddling byte 120 must not panic the
+    // Bash fts truncation (this crashed indexing → app failed to launch).
+    #[test]
+    fn bash_fts_truncation_is_char_safe() {
+        // 119 ASCII bytes then a 3-byte char: byte 120 is mid-char.
+        let cmd = format!("{}€ and some trailing text to exceed the limit", "a".repeat(119));
+        let input = serde_json::json!({ "command": cmd });
+        let (_, fts) = build_tool_use_text("Bash", &input);
+        assert!(fts.starts_with("Bash: "));
+        assert!(fts.contains('€'));
+    }
+
+    #[test]
+    fn subagent_sessions_are_flagged() {
+        use std::io::Write;
+        let dir = std::env::temp_dir().join(format!("tr-parser-test-{}", std::process::id()));
+        let sub = dir.join("proj").join("sess").join("subagents");
+        std::fs::create_dir_all(&sub).unwrap();
+        let path = sub.join("abcd1234.jsonl");
+        let mut f = std::fs::File::create(&path).unwrap();
+        writeln!(f, "{}", serde_json::json!({
+            "type": "user",
+            "message": {"role": "user", "content": "do the thing"},
+            "timestamp": "2026-01-01T10:00:00Z"
+        })).unwrap();
+        let (meta, _) = parse_session(&path).unwrap();
+        assert_eq!(meta.is_subagent, 1);
+        std::fs::remove_dir_all(&dir).ok();
+    }
 }

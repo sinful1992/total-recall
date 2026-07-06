@@ -15,10 +15,13 @@ Total Recall stores everything and costs nothing to access. Browse your full his
 - **Projects view** — conversations grouped by working directory
 - **Starred sessions** — star any conversation; starred sessions are pinned at the top of the timeline
 - **Automated sessions** — hidden by default; toggle to show/hide with a count badge
+- **Subagent sessions** — subagent transcripts are indexed too; hidden by default with their own toggle
 - **Older sessions pagination** — the Older group loads 30 at a time to keep the sidebar fast
 
 ### Search
 - **Full-text search** — FTS5 search across all conversations with highlighted snippets and total match count
+- **Grouped results** — hits are grouped per conversation with a match count, so one chatty session can't drown out the rest
+- **Filters** — narrow a search to a single project, starred conversations only, or include subagent transcripts
 - **Scroll to match** — clicking a search result opens the conversation and jumps to the matching message
 - **Plans search** — separate search tab for `~/.claude/plans/` markdown files with highlighted snippets
 
@@ -37,11 +40,11 @@ Total Recall stores everything and costs nothing to access. Browse your full his
 - **Copy raw** — copy the raw markdown source of any plan
 
 ### Data & privacy
-- **Persistent archive** — sessions stay in the local SQLite index even after Claude prunes the source JSONL files (30-day window)
+- **Persistent archive** — sessions stay in the local SQLite index even after Claude prunes the source JSONL files (30-day window); their full message content survives schema migrations too
 - **Incremental indexing** — only changed or new files are re-parsed on startup
 - **Live re-index** — new conversations appear automatically as Claude writes them
 - **In-app auto-update** — notified when a new version is available; installs with one click
-- **Completely passive** — no writes to your Claude data, ever; subagent sessions are excluded automatically
+- **Completely passive** — no writes to your Claude data, ever
 
 ## Installation
 
@@ -98,7 +101,7 @@ cargo run
 
 ## How it works
 
-Total Recall scans `~/.claude/projects/` for Claude Code JSONL session files and indexes them into a local SQLite cache at `~/.cache/total-recall/index.sqlite` (Windows: `%LOCALAPPDATA%\total-recall\index.sqlite`). The index is rebuilt incrementally on startup, then kept live via a filesystem watcher that picks up new conversations as Claude writes them.
+Total Recall scans `~/.claude/projects/` for Claude Code JSONL session files and indexes them into a local SQLite database at `~/.local/share/total-recall/index.sqlite` (Windows: `%LOCALAPPDATA%\total-recall\index.sqlite`; an existing index at the old `~/.cache/total-recall/` location is migrated automatically). The index is rebuilt incrementally on startup, then kept live via a filesystem watcher that picks up new conversations as Claude writes them.
 
 ## Tech stack
 

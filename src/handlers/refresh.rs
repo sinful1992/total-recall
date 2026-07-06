@@ -2,27 +2,20 @@ use axum::extract::State;
 use maud::Markup;
 
 use crate::AppState;
-use crate::html::components::{SessionRow, drawer_timeline_html};
+use crate::html::components::error_page;
+use crate::handlers::index::default_sidebar;
 
 pub async fn handler(State(state): State<AppState>) -> Markup {
     let db_path = state.db_path.clone();
     let home = state.home_dir.clone();
     tokio::task::spawn_blocking(move || {
         crate::indexer::build_or_refresh_index(&db_path, &home);
-        let conn = crate::db::open(&db_path).unwrap();
-        let auto_count: i64 = conn
-            .query_row("SELECT COUNT(*) FROM sessions WHERE is_automated=1", [], |r| r.get(0))
-            .unwrap_or(0);
-        let mut stmt = conn
-            .prepare("SELECT * FROM sessions WHERE is_automated=0 ORDER BY ended_at DESC")
-            .unwrap();
-        let sessions: Vec<SessionRow> = stmt
-            .query_map([], |r| SessionRow::from_row(r))
-            .unwrap()
-            .filter_map(|r| r.ok())
-            .collect();
-        drawer_timeline_html(&sessions, auto_count, false)
+        let conn = match crate::db::open(&db_path) {
+            Ok(c) => c,
+            Err(_) => return error_page("index unavailable"),
+        };
+        default_sidebar(&conn)
     })
     .await
-    .unwrap()
+    .unwrap_or_else(|_| error_page("refresh failed — try again"))
 }

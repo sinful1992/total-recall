@@ -2,6 +2,7 @@ use axum::extract::{Path, State};
 use maud::{html, Markup};
 
 use crate::AppState;
+use crate::html::components::error_page;
 
 pub async fn handler(
     State(state): State<AppState>,
@@ -9,7 +10,10 @@ pub async fn handler(
 ) -> Markup {
     let db_path = state.db_path.clone();
     tokio::task::spawn_blocking(move || {
-        let conn = crate::db::open(&db_path).unwrap();
+        let conn = match crate::db::open(&db_path) {
+            Ok(c) => c,
+            Err(_) => return error_page("index unavailable"),
+        };
         let _ = conn.execute(
             "UPDATE sessions SET is_favourite = CASE WHEN is_favourite=1 THEN 0 ELSE 1 END WHERE session_id=?1",
             [&sid],
@@ -34,5 +38,5 @@ pub async fn handler(
         }
     })
     .await
-    .unwrap()
+    .unwrap_or_else(|_| error_page("favourite toggle failed"))
 }

@@ -16,6 +16,20 @@ pub fn welcome() -> Markup {
     }
 }
 
+/// Friendly failure fragment — rendered instead of dropping the connection
+/// when a handler hits a DB error or panic.
+pub fn error_page(msg: &str) -> Markup {
+    html! {
+        div id="main" {
+            div.welcome {
+                div.welcome-icon { "\u{26A0}" }
+                p.welcome-text { "Something went wrong" }
+                p.welcome-sub { (msg) }
+            }
+        }
+    }
+}
+
 pub fn session_item_html(
     session_id: &str,
     first_user_text: &str,
@@ -114,7 +128,13 @@ fn starred_group(items: &[&SessionRow]) -> Markup {
     }
 }
 
-pub fn drawer_timeline_html(sessions: &[SessionRow], auto_count: i64, show_automated: bool) -> Markup {
+pub fn drawer_timeline_html(
+    sessions: &[SessionRow],
+    auto_count: i64,
+    show_automated: bool,
+    sub_count: i64,
+    show_subagents: bool,
+) -> Markup {
     let starred: Vec<&SessionRow> = sessions.iter().filter(|s| s.is_favourite != 0).collect();
     let regular: Vec<&SessionRow> = sessions.iter().filter(|s| s.is_favourite == 0).collect();
 
@@ -125,33 +145,46 @@ pub fn drawer_timeline_html(sessions: &[SessionRow], auto_count: i64, show_autom
         buckets.entry(b).or_default().push(s);
     }
 
+    let auto_param = if show_automated { "1" } else { "0" };
+    let sub_param = if show_subagents { "1" } else { "0" };
+
     let auto_chip = if auto_count > 0 {
-        if show_automated {
-            html! {
-                div.auto-chip.active
-                    hx-get="/drawer?by=timeline&auto=0"
-                    hx-target="#sidebar"
-                    hx-swap="outerHTML"
-                {
-                    span style="flex:1" { (format!("Hiding {} automated", auto_count)) }
-                }
-            }
+        let (cls, label, next) = if show_automated {
+            ("auto-chip active", format!("Hiding {} automated", auto_count), "0")
         } else {
-            html! {
-                div.auto-chip
-                    hx-get="/drawer?by=timeline&auto=1"
-                    hx-target="#sidebar"
-                    hx-swap="outerHTML"
-                {
-                    span { (format!("+ {} automated sessions", auto_count)) }
-                }
+            ("auto-chip", format!("+ {} automated sessions", auto_count), "1")
+        };
+        html! {
+            div class=(cls)
+                hx-get=(format!("/drawer?by=timeline&auto={}&sub={}", next, sub_param))
+                hx-target="#sidebar"
+                hx-swap="outerHTML"
+            {
+                span style="flex:1" { (label) }
             }
         }
     } else {
         html! {}
     };
 
-    let auto_param = if show_automated { "1" } else { "0" };
+    let sub_chip = if sub_count > 0 {
+        let (cls, label, next) = if show_subagents {
+            ("auto-chip active", format!("Hiding {} subagent", sub_count), "0")
+        } else {
+            ("auto-chip", format!("+ {} subagent sessions", sub_count), "1")
+        };
+        html! {
+            div class=(cls)
+                hx-get=(format!("/drawer?by=timeline&auto={}&sub={}", auto_param, next))
+                hx-target="#sidebar"
+                hx-swap="outerHTML"
+            {
+                span style="flex:1" { (label) }
+            }
+        }
+    } else {
+        html! {}
+    };
 
     html! {
         div id="sidebar" {
@@ -162,7 +195,7 @@ pub fn drawer_timeline_html(sessions: &[SessionRow], auto_count: i64, show_autom
                 @if let Some(items) = buckets.get(bkt) {
                     @if !items.is_empty() {
                         @if bkt == "Older" {
-                            (drawer_group_older(items, auto_param))
+                            (drawer_group_older(items, auto_param, sub_param))
                         } @else {
                             (drawer_group(bkt, items, bkt == "Today" || bkt == "Yesterday"))
                         }
@@ -170,6 +203,7 @@ pub fn drawer_timeline_html(sessions: &[SessionRow], auto_count: i64, show_autom
                 }
             }
             (auto_chip)
+            (sub_chip)
         }
     }
 }
@@ -198,7 +232,7 @@ pub fn drawer_projects_html(sessions: &[SessionRow], home: &str) -> Markup {
     }
 }
 
-fn drawer_group_older(items: &[&SessionRow], auto_param: &str) -> Markup {
+fn drawer_group_older(items: &[&SessionRow], auto_param: &str, sub_param: &str) -> Markup {
     const PAGE: usize = 30;
     let total = items.len();
     let visible = &items[..total.min(PAGE)];
@@ -217,7 +251,7 @@ fn drawer_group_older(items: &[&SessionRow], auto_param: &str) -> Markup {
                 }
                 @if has_more {
                     button.load-more-btn
-                        hx-get=(format!("/drawer/older-items?offset={}&auto={}", PAGE, auto_param))
+                        hx-get=(format!("/drawer/older-items?offset={}&auto={}&sub={}", PAGE, auto_param, sub_param))
                         hx-target="this"
                         hx-swap="outerHTML"
                     {

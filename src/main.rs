@@ -1,19 +1,12 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-mod db;
-mod handlers;
-mod helpers;
-mod html;
-mod indexer;
-mod parser;
-mod routes;
-
 use std::net::TcpListener;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use notify::Watcher;
-use tauri::Manager;
 use tauri_plugin_updater::UpdaterExt;
+
+use total_recall::{db, indexer, routes};
 
 #[tauri::command]
 async fn check_update(app: tauri::AppHandle) -> Option<String> {
@@ -32,12 +25,6 @@ async fn install_update(app: tauri::AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-#[derive(Clone)]
-pub struct AppState {
-    pub db_path: PathBuf,
-    pub home_dir: PathBuf,
-}
-
 fn resolve_home() -> PathBuf {
     if let Ok(h) = std::env::var("HOME") {
         if !h.is_empty() { return PathBuf::from(h); }
@@ -48,7 +35,9 @@ fn resolve_home() -> PathBuf {
     panic!("Cannot resolve user home: neither HOME nor USERPROFILE is set");
 }
 
-fn cache_dir(home: &Path) -> PathBuf {
+/// The DB holds user data (notes, favourites, pruned-session archive), so it
+/// belongs in the data dir, not the cache dir.
+fn data_dir(home: &Path) -> PathBuf {
     #[cfg(target_os = "windows")]
     {
         let _ = home;
@@ -57,8 +46,37 @@ fn cache_dir(home: &Path) -> PathBuf {
     }
     #[cfg(not(target_os = "windows"))]
     {
-        home.join(".cache").join("total-recall")
+        std::env::var("XDG_DATA_HOME")
+            .ok()
+            .filter(|s| !s.is_empty())
+            .map(PathBuf::from)
+            .unwrap_or_else(|| home.join(".local").join("share"))
+            .join("total-recall")
     }
+}
+
+/// One-time move of the DB out of ~/.cache (where cleanup tools may delete it).
+#[cfg(not(target_os = "windows"))]
+fn migrate_legacy_db(home: &Path, new_db: &Path) {
+    if new_db.exists() { return; }
+    let old_dir = home.join(".cache").join("total-recall");
+    if !old_dir.join("index.sqlite").exists() { return; }
+    if let Some(parent) = new_db.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    for suffix in ["", "-wal", "-shm"] {
+        let old = old_dir.join(format!("index.sqlite{}", suffix));
+        if old.exists() {
+            let new = new_db.with_file_name(format!("index.sqlite{}", suffix));
+            if std::fs::rename(&old, &new).is_err() {
+                // Cross-device fallback
+                if std::fs::copy(&old, &new).is_ok() {
+                    let _ = std::fs::remove_file(&old);
+                }
+            }
+        }
+    }
+    println!("Migrated database from {} to {}", old_dir.display(), new_db.parent().unwrap().display());
 }
 
 fn pick_free_port() -> u16 {
@@ -82,7 +100,9 @@ fn wait_ready(port: u16) {
 
 fn main() {
     let home_dir = resolve_home();
-    let db_path = cache_dir(&home_dir).join("index.sqlite");
+    let db_path = data_dir(&home_dir).join("index.sqlite");
+    #[cfg(not(target_os = "windows"))]
+    migrate_legacy_db(&home_dir, &db_path);
 
     db::init_db(&db_path).expect("Failed to initialize database");
     indexer::build_or_refresh_index(&db_path, &home_dir);

@@ -3,7 +3,7 @@ use maud::{html, Markup};
 use serde::Deserialize;
 
 use crate::AppState;
-use crate::html::components::{MsgRow, session_view_html, welcome};
+use crate::html::components::{MsgRow, session_view_html, welcome, error_page};
 
 #[derive(Deserialize)]
 pub struct SessionParams {
@@ -20,7 +20,10 @@ pub async fn handler(
     let scroll_seq = params.seq;
 
     tokio::task::spawn_blocking(move || {
-        let conn = crate::db::open(&db_path).unwrap();
+        let conn = match crate::db::open(&db_path) {
+            Ok(c) => c,
+            Err(_) => return error_page("index unavailable"),
+        };
 
         let sess = conn.query_row(
             "SELECT session_id, first_user_text, started_at, ended_at, msg_count, is_resumed, cwd, ref_num, notes, COALESCE(is_favourite, 0)
@@ -75,5 +78,5 @@ pub async fn handler(
         }
     })
     .await
-    .unwrap()
+    .unwrap_or_else(|_| error_page("failed to load conversation — try refreshing"))
 }
