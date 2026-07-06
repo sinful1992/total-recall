@@ -57,7 +57,7 @@ pub async fn handler(
             Err(_) => return error_page("index unavailable"),
         };
         let sessions: Vec<SessionRow> = stmt
-            .query_map([], |r| SessionRow::from_row(r))
+            .query_map([], SessionRow::from_row)
             .map(|rs| rs.filter_map(|r| r.ok()).collect())
             .unwrap_or_default();
 
@@ -110,7 +110,7 @@ pub async fn older_handler(
             Err(_) => return error_page("index unavailable"),
         };
         let sessions: Vec<SessionRow> = stmt
-            .query_map([], |r| SessionRow::from_row(r))
+            .query_map([], SessionRow::from_row)
             .map(|rs| rs.filter_map(|r| r.ok()).collect())
             .unwrap_or_default();
 

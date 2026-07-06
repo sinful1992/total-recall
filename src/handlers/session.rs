@@ -54,7 +54,7 @@ pub async fn handler(
                     .prepare("SELECT seq, role, ts, text FROM messages WHERE session_id=?1 ORDER BY seq")
                     .unwrap();
                 let messages: Vec<MsgRow> = stmt
-                    .query_map([&session_id], |r| MsgRow::from_row(r))
+                    .query_map([&session_id], MsgRow::from_row)
                     .unwrap()
                     .filter_map(|r| r.ok())
                     .collect();

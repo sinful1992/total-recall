@@ -36,8 +36,8 @@ pub async fn sidebar_handler(State(state): State<AppState>) -> Markup {
             if let Ok(text) = std::fs::read_to_string(&path) {
                 size_lines = text.lines().count();
                 for line in text.lines() {
-                    if line.starts_with("# ") {
-                        title = line[2..].trim().to_string();
+                    if let Some(rest) = line.strip_prefix("# ") {
+                        title = rest.trim().to_string();
                         break;
                     }
                 }

@@ -1,5 +1,6 @@
 pub const CSS: &str = r#"
 :root {
+  color-scheme: dark;
   --bg:        #0d0c0a;
   --bg-mid:    #111009;
   --bg-el:     #191714;
@@ -595,10 +596,17 @@ body.resizing * { user-select: none !important; }
   background: var(--bg);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 4px 8px;
+  padding: 4px 22px 4px 8px;
   max-width: 220px;
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='5'%3E%3Cpath d='M0 0l4 5 4-5z' fill='%236e6658'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+  cursor: pointer;
 }
 .sfilter:focus { border-color: var(--border-hi); outline: none; }
+.sfilter:hover { border-color: var(--border-hi); }
 .sfilter-toggle {
   display: flex;
   align-items: center;
@@ -636,18 +644,41 @@ body.resizing * { user-select: none !important; }
 }
 .sgroup-ref { color: var(--accent); }
 .sgroup-count { margin-left: auto; }
+/* Thread line: hits hang off their conversation like replies in a thread. */
 .sr-grouped {
-  padding: 8px 16px 8px 28px;
+  margin-left: 22px;
+  border-left: 1px solid var(--border);
+  padding: 8px 16px 8px 14px;
   border-bottom: none;
+  transition: background 0.1s, border-color 0.1s;
 }
+.sr-grouped:hover { border-left-color: var(--accent); }
 .sr-more {
-  padding: 6px 16px 12px 28px;
+  margin-left: 22px;
+  border-left: 1px solid var(--border);
+  padding: 6px 16px 12px 14px;
   font-family: var(--mono);
   font-size: 10.5px;
   color: var(--text-dim);
   cursor: pointer;
+  transition: color 0.1s, border-color 0.1s;
 }
-.sr-more:hover { color: var(--text-mid); }
+.sr-more:hover { color: var(--text-mid); border-left-color: var(--accent); }
+.sgroup { padding-bottom: 6px; }
+
+.clear-filters-btn {
+  margin-top: 10px;
+  padding: 5px 12px;
+  background: var(--bg-el);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text-mid);
+  font-family: var(--mono);
+  font-size: 11px;
+  cursor: pointer;
+  transition: border-color 0.12s, color 0.12s;
+}
+.clear-filters-btn:hover { border-color: var(--accent); color: var(--accent-hi); }
 
 .htmx-request #main { opacity: 0.6; transition: opacity 0.15s; }
 
@@ -1206,6 +1237,16 @@ function searchUrl() {
 
 function runSearch() {
   htmx.ajax('GET', searchUrl(), {target: '#main', swap: 'outerHTML'});
+}
+
+function clearFilters() {
+  var proj = document.getElementById('sf-project');
+  var fav  = document.getElementById('sf-fav');
+  var sub  = document.getElementById('sf-sub');
+  if (proj) proj.value = '';
+  if (fav) fav.checked = false;
+  if (sub) sub.checked = false;
+  runSearch();
 }
 
 // Attach active filter values to every conversation-search request, whether

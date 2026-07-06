@@ -16,7 +16,7 @@ pub fn default_sidebar(conn: &rusqlite::Connection) -> Markup {
     let sessions: Vec<SessionRow> = conn
         .prepare("SELECT * FROM sessions WHERE is_automated=0 AND COALESCE(is_subagent,0)=0 ORDER BY ended_at DESC")
         .and_then(|mut stmt| {
-            let v = stmt.query_map([], |r| SessionRow::from_row(r))?
+            let v = stmt.query_map([], SessionRow::from_row)?
                 .filter_map(|r| r.ok())
                 .collect::<Vec<_>>();
             Ok(v)

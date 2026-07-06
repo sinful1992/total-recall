@@ -38,6 +38,16 @@ struct Group {
 /// Hits shown per conversation before collapsing into "+N more matches".
 const HITS_PER_SESSION: usize = 5;
 
+/// Same vocabulary as the conversation view: USER / Claude / tool call.
+fn role_label(role: &str) -> &'static str {
+    match role {
+        "user" => "USER",
+        "assistant" => "Claude",
+        "tool_use" => "tool call",
+        _ => "message",
+    }
+}
+
 pub async fn handler(
     State(state): State<AppState>,
     Query(params): Query<SearchParams>,
@@ -103,6 +113,7 @@ pub async fn handler(
             Ok(s) => s,
             Err(_) => return error_page("search query failed"),
         };
+        #[allow(clippy::type_complexity)]
         let rows: Vec<(String, i64, String, String, String, String, i64, String)> = stmt
             .query_map(rusqlite::params_from_iter(binds.iter()), |r| Ok((
                 r.get::<_, String>(0)?,
@@ -132,6 +143,7 @@ pub async fn handler(
         }
 
         let filter_bar = filter_bar_html(&conn, &params, &home);
+        let filters_active = !params.project.is_empty() || params.fav == "1" || params.sub == "1";
 
         if groups.is_empty() {
             return html! {
@@ -140,6 +152,10 @@ pub async fn handler(
                     div.welcome {
                         div.welcome-icon { "\u{25C8}" }
                         p.welcome-text { (format!("No results for \u{201C}{}\u{201D}", q)) }
+                        @if filters_active {
+                            p.welcome-sub { "Filters are narrowing this search" }
+                            button.clear-filters-btn onclick="clearFilters()" { "clear filters" }
+                        }
                     }
                 }
             };
@@ -183,7 +199,7 @@ pub async fn handler(
                                 onclick=(format!("activateSession('{}')", sid))
                             {
                                 p.sr-snip { (PreEscaped(&h.snippet)) }
-                                div.sr-meta { span { (h.role) } }
+                                div.sr-meta { span { (role_label(&h.role)) } }
                             }
                         }
                         @if g.extra > 0 {

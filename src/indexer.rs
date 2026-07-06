@@ -265,14 +265,13 @@ pub fn build_or_refresh_index(db_path: &Path, home_dir: &Path) {
                 continue;
             }
             // Incremental: file grew
-            if size > *cached_size {
-                if index_incremental(&mut conn, path, *cached_size, mtime, size, cached_sid)
+            if size > *cached_size
+                && index_incremental(&mut conn, path, *cached_size, mtime, size, cached_sid)
                     .is_ok()
                 {
                     count_new += 1;
                     continue;
                 }
-            }
         }
 
         // Full re-index for this file.

@@ -30,6 +30,7 @@ pub fn error_page(msg: &str) -> Markup {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn session_item_html(
     session_id: &str,
     first_user_text: &str,
@@ -319,6 +320,7 @@ impl MsgRow {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn session_view_html(
     session_id: &str,
     first_user_text: &str,
