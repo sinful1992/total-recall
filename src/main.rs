@@ -4,25 +4,46 @@ use std::net::TcpListener;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use notify::Watcher;
+use tauri_plugin_dialog::{DialogExt, MessageDialogButtons};
 use tauri_plugin_updater::UpdaterExt;
 
 use total_recall::{db, indexer, routes};
 
-#[tauri::command]
-async fn check_update(app: tauri::AppHandle) -> Option<String> {
-    let updater = app.updater_builder().build().ok()?;
-    let update = updater.check().await.ok()??;
-    Some(update.version)
-}
+/// Update check runs Rust-side with a native dialog: the webview must not be
+/// a dependency of the updater, or a dead renderer (v1.6.1 AppImage EGL
+/// crash) leaves users stranded on a broken build with no way to get the fix.
+async fn check_for_update(app: tauri::AppHandle) {
+    let Ok(updater) = app.updater_builder().build() else { return };
+    let Ok(Some(update)) = updater.check().await else { return };
+    eprintln!("Update v{} available", update.version);
 
-#[tauri::command]
-async fn install_update(app: tauri::AppHandle) -> Result<(), String> {
-    let updater = app.updater_builder().build().map_err(|e| e.to_string())?;
-    if let Some(update) = updater.check().await.map_err(|e| e.to_string())? {
-        update.download_and_install(|_, _| {}, || {}).await.map_err(|e| e.to_string())?;
-        app.exit(0);
+    let prompt = app.clone();
+    let version = update.version.clone();
+    let confirmed = tauri::async_runtime::spawn_blocking(move || {
+        prompt
+            .dialog()
+            .message(format!("Total Recall v{} is available.", version))
+            .title("Update available")
+            .buttons(MessageDialogButtons::OkCancelCustom(
+                "Install & Restart".into(),
+                "Later".into(),
+            ))
+            .blocking_show()
+    })
+    .await
+    .unwrap_or(false);
+    if !confirmed {
+        return;
     }
-    Ok(())
+
+    match update.download_and_install(|_, _| {}, || {}).await {
+        Ok(()) => app.restart(),
+        Err(e) => app
+            .dialog()
+            .message(format!("Update failed: {e}"))
+            .title("Update")
+            .show(|_| {}),
+    }
 }
 
 fn resolve_home() -> PathBuf {
@@ -180,6 +201,7 @@ fn main() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_dialog::init())
         .setup(move |app| {
             tauri::WebviewWindowBuilder::new(
                 app,
@@ -191,9 +213,10 @@ fn main() {
             .min_inner_size(800.0, 600.0)
             .build()?;
 
+            tauri::async_runtime::spawn(check_for_update(app.handle().clone()));
+
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![install_update, check_update])
         .run(tauri::generate_context!())
         .expect("Failed to run Tauri application");
 }

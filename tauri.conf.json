@@ -3,7 +3,6 @@
   "identifier": "dev.totalrecall",
   "version": "1.6.2",
   "app": {
-    "withGlobalTauri": true,
     "security": {
       "csp": null
     }

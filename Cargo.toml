@@ -8,6 +8,7 @@ license = "MIT"
 [dependencies]
 tauri = { version = "2", features = [] }
 tauri-plugin-updater = "2"
+tauri-plugin-dialog = "2"
 axum = "0.7"
 tokio = { version = "1", features = ["full"] }
 rusqlite = { version = "0.31", features = ["bundled"] }
