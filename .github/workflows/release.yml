@@ -78,6 +78,7 @@ jobs:
           name: linux-bundles
           path: |
             target/release/bundle/deb/*.deb
+            target/release/bundle/rpm/*.rpm
             target/release/bundle/appimage/*.AppImage
             target/release/bundle/appimage/*.AppImage.sig
           if-no-files-found: warn
@@ -238,6 +239,7 @@ jobs:
         with:
           files: |
             artifacts/linux/**/*.deb
+            artifacts/linux/**/*.rpm
             artifacts/linux/**/*.AppImage
             artifacts/linux/**/*.AppImage.sig
             artifacts/windows/**/*.exe
