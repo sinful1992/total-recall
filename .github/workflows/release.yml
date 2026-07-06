@@ -50,7 +50,7 @@ jobs:
       - name: Install Linux system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y             libwebkit2gtk-4.1-dev             libgtk-3-dev             libayatana-appindicator3-dev             libssl-dev             libxdo-dev             file             curl             wget
+          sudo apt-get install -y             libwebkit2gtk-4.1-dev             libgtk-3-dev             libayatana-appindicator3-dev             libssl-dev             libxdo-dev             file             curl             wget             squashfs-tools
 
       - name: Cache Cargo registry
         uses: actions/cache@v4
@@ -71,6 +71,34 @@ jobs:
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+
+      # linuxdeploy bundles the build host's libwayland-* into the AppImage;
+      # on hosts with a newer Mesa/EGL stack the mismatch kills WebKit's
+      # renderer (EGL_BAD_PARAMETER -> white screen). Strip them so the host
+      # libwayland is used, then rebuild the AppImage (runtime stub + zstd
+      # squashfs, same as appimagetool) and re-sign the updater artifact.
+      - name: Strip bundled libwayland from AppImage (white-screen fix)
+        run: |
+          set -euo pipefail
+          cd target/release/bundle/appimage
+          APP=$(ls *.AppImage)
+          ./"$APP" --appimage-extract > /dev/null
+          rm -v squashfs-root/usr/lib/libwayland-*.so*
+          OFFSET=$(readelf -h "$APP" | awk '/Start of section headers/{o=$5} /Size of section headers/{s=$5} /Number of section headers/{n=$5} END{print o+s*n}')
+          head -c "$OFFSET" "$APP" > runtime.bin
+          mksquashfs squashfs-root fs.squashfs -comp zstd -b 131072 -root-owned -noappend -quiet
+          cat runtime.bin fs.squashfs > "$APP"
+          chmod +x "$APP"
+          rm -rf squashfs-root runtime.bin fs.squashfs "$APP.sig"
+
+      - name: Re-sign AppImage updater artifact
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          cd target/release/bundle/appimage
+          cargo tauri signer sign -k "$TAURI_SIGNING_PRIVATE_KEY" -p "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" "$(ls *.AppImage)"
 
       - name: Upload Linux artifacts
         uses: actions/upload-artifact@v4
