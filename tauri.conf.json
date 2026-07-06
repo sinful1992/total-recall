@@ -1,7 +1,7 @@
 {
   "productName": "Total Recall",
   "identifier": "dev.totalrecall",
-  "version": "1.6.2",
+  "version": "1.6.3",
   "app": {
     "security": {
       "csp": null
